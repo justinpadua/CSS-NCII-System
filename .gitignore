@@ -1,0 +1,41 @@
+﻿# Environment variables and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Java / Maven
+**/target/
+*.class
+
+# Node / React / Vite
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+
+# Instructor-only assessment materials
+learning-content/instructor-only/
+
+# Database scripts and backups
+*.sql
+*.dump
+*.bak
+*.backup
+
+# Logs
+*.log
+
+# IDE and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+!**/.env.example
+
+# Unnecessary archive files
+*.zip
+
+# Keep the application schema file
+!backend/src/main/resources/schema.sql
