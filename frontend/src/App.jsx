@@ -8,6 +8,7 @@ import AssessmentManagement from './AssessmentManagement.jsx'
 import StudentLearningDashboard from './StudentLearningDashboard.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
 import StudentProgress from './StudentProgress.jsx'
+import SystemBrandingLayout from './SystemBranding.jsx'
 
 const navigationItems = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -259,27 +260,76 @@ function App() {
   }, [])
 
   if (checkingSession) {
-    return <main className="grid min-h-screen place-items-center bg-slate-100 text-slate-700">Checking your session…</main>
+    return (
+      <SystemBrandingLayout headerContent={<div className="text-sm font-semibold text-sky-950">CSS NC II Learning System <span className="ml-2 font-normal text-slate-600">Checking session…</span></div>}>
+        <main className="grid min-h-[calc(100svh-144px)] place-items-center bg-slate-100 pb-10 text-slate-700 sm:min-h-[calc(100svh-104px)]">Checking your session…</main>
+      </SystemBrandingLayout>
+    )
   }
 
   if (student) {
-    return <StudentLearningDashboard student={student} onLogout={handleStudentLogout} onSessionExpired={handleStudentSessionExpired} busy={busy} sessionError={sessionCheckError} />
+    return (
+      <SystemBrandingLayout
+        headerContent={(
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="min-w-36 flex-1">
+              <p className="text-sm font-semibold text-teal-700">CSS NC II Learning System</p>
+              <p className="text-xs font-semibold text-slate-800 sm:text-sm">Student Learning Dashboard</p>
+            </div>
+            <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+              <span className="min-w-0 text-right text-xs leading-4 text-slate-600 sm:text-sm">
+                <span className="block truncate sm:max-w-56">{student.fullName}</span>
+                <span className="block text-slate-500">{student.accountId}</span>
+              </span>
+              <button type="button" onClick={handleStudentLogout} disabled={busy} className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-sky-950 hover:bg-slate-50 disabled:opacity-60 sm:text-sm">{busy ? 'Logging out…' : 'Log out'}</button>
+            </div>
+          </div>
+        )}
+      >
+        <StudentLearningDashboard student={student} onSessionExpired={handleStudentSessionExpired} sessionError={sessionCheckError} />
+      </SystemBrandingLayout>
+    )
   }
 
   if (admin) {
     const currentPage = navigationItems.find(item => item.id === activePage) ?? navigationItems[0]
     return (
-      <div className="min-h-screen bg-slate-100 text-slate-900">
+      <SystemBrandingLayout
+        headerContent={(
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                aria-label="Open navigation menu"
+                aria-expanded={sidebarOpen}
+                onClick={() => setSidebarOpen(true)}
+                className="grid size-10 shrink-0 place-items-center rounded-lg border border-slate-200 text-sky-950 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 lg:hidden"
+              >
+                <span aria-hidden="true" className="text-xl leading-none">☰</span>
+              </button>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">Admin Workspace</p>
+                <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">{currentPage.label}</h2>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <p className="hidden max-w-56 truncate text-sm font-medium text-slate-600 sm:block" title={admin.username}>{admin.username}</p>
+              <button type="button" onClick={handleLogout} disabled={busy} className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-sky-950 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 sm:text-sm">{busy ? 'Signing out…' : 'Log out'}</button>
+            </div>
+          </div>
+        )}
+      >
+      <div className="min-h-[calc(100svh-144px)] bg-slate-100 pb-10 text-slate-900 sm:min-h-[calc(100svh-104px)]">
         {sidebarOpen && (
           <button
             type="button"
             aria-label="Close navigation menu"
-            className="fixed inset-0 z-30 bg-slate-950/50 lg:hidden"
+            className="fixed inset-x-0 bottom-0 top-[112px] z-30 bg-slate-950/50 sm:top-[72px] lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-gradient-to-b from-sky-950 to-teal-950 text-white shadow-xl transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed bottom-0 left-0 top-[112px] z-40 flex w-72 flex-col bg-gradient-to-b from-sky-950 to-teal-950 text-white shadow-xl transition-transform duration-200 sm:top-[72px] lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="border-b border-white/10 px-6 py-6">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-200">CSS NC II</p>
             <h1 className="mt-1 text-xl font-bold">Admin Workspace</h1>
@@ -305,43 +355,9 @@ function App() {
             })}
           </nav>
 
-          <div className="border-t border-white/10 p-4">
-            <p className="truncate px-3 pb-3 text-sm text-sky-100" title={admin.username}>
-              Signed in as <span className="font-semibold text-white">{admin.username}</span>
-            </p>
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={busy}
-              className="w-full rounded-lg border border-white/20 px-4 py-2.5 text-left text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-200"
-            >
-              {busy ? 'Signing out…' : 'Log out'}
-            </button>
-          </div>
         </aside>
 
-        <div className="min-h-screen lg:pl-72">
-          <header className="sticky top-0 z-20 flex min-h-18 items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 shadow-sm backdrop-blur sm:px-6 lg:px-8">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                aria-label="Open navigation menu"
-                aria-expanded={sidebarOpen}
-                onClick={() => setSidebarOpen(true)}
-                className="grid size-10 place-items-center rounded-lg border border-slate-200 text-sky-950 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 lg:hidden"
-              >
-                <span aria-hidden="true" className="text-xl leading-none">☰</span>
-              </button>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">Admin</p>
-                <h2 className="text-lg font-bold text-slate-900">{currentPage.label}</h2>
-              </div>
-            </div>
-            <p className="hidden max-w-56 truncate text-sm font-medium text-slate-600 sm:block" title={admin.username}>
-              {admin.username}
-            </p>
-          </header>
-
+        <div className="min-h-[calc(100svh-144px)] pb-10 lg:pl-72 sm:min-h-[calc(100svh-104px)]">
           <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
             {error && <p role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
             {activePage === 'students' ? (
@@ -372,11 +388,20 @@ function App() {
           </main>
         </div>
       </div>
+      </SystemBrandingLayout>
     )
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-gradient-to-br from-sky-950 via-sky-900 to-teal-950 p-4">
+    <SystemBrandingLayout
+      headerContent={(
+        <div>
+          <p className="text-sm font-semibold text-teal-700">CSS NC II Learning System</p>
+          <p className="text-xs font-semibold text-slate-700 sm:text-sm">{loginMode === 'admin' ? 'Admin Login' : registrationMode ? 'Student Registration' : 'Student Login'}</p>
+        </div>
+      )}
+    >
+    <main className="grid min-h-[calc(100svh-144px)] place-items-center bg-gradient-to-br from-sky-950 via-sky-900 to-teal-950 p-4 pb-10 sm:min-h-[calc(100svh-104px)]">
       <section className="w-full max-w-md rounded-2xl border border-white/30 bg-white/95 p-6 shadow-2xl sm:p-8">
         {loginMode === 'student' ? (
           <section aria-labelledby="student-login-heading">
@@ -456,6 +481,7 @@ function App() {
         )}
       </section>
     </main>
+    </SystemBrandingLayout>
   )
 }
 

@@ -6,11 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.cssncii.TestController;
 import com.cssncii.config.AdminSecurityConfiguration;
 import com.cssncii.entity.Admin;
 import com.cssncii.repository.AdminRepository;
@@ -30,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 @WebMvcTest(AdminAuthController.class)
-@Import({AdminSecurityConfiguration.class, AdminUserDetailsService.class, TestController.class})
+@Import({AdminSecurityConfiguration.class, AdminUserDetailsService.class})
 class AdminAuthControllerTest {
     private static final String LOGIN_URL = "/api/admin/auth/login";
     private static final String CSRF_URL = "/api/admin/auth/csrf";
@@ -145,15 +143,15 @@ class AdminAuthControllerTest {
     }
 
     @Test
-    void loginRequiresCsrfTokenAndHelloEndpointRemainsAvailable() throws Exception {
+    void loginRequiresCsrfTokenAndCsrfEndpointRemainsAvailableWithoutAuthentication() throws Exception {
         mockMvc.perform(post(LOGIN_URL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"css-admin\",\"password\":\"" + PASSWORD + "\"}"))
             .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/api/hello"))
+        mockMvc.perform(get(CSRF_URL))
             .andExpect(status().isOk())
-            .andExpect(content().string("Hello from CSS NCII API!"));
+            .andExpect(jsonPath("$.headerName").value("X-CSRF-TOKEN"));
     }
 
     @Test

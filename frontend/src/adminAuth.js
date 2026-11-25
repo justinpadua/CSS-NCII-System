@@ -39,14 +39,14 @@ async function getCsrfToken() {
 async function requestWithCsrf(path, method, body) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const csrf = await getCsrfToken()
+    const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData
+    const headers = { [csrf.headerName]: csrf.token }
+    if (!isMultipart) headers['Content-Type'] = 'application/json'
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        [csrf.headerName]: csrf.token,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers,
+      body: body === undefined ? undefined : isMultipart ? body : JSON.stringify(body),
     })
 
     if (response.status === 403 && attempt === 0) continue

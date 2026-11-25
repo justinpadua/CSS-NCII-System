@@ -13,6 +13,7 @@
 **/dist/
 **/.vite/
 **/coverage/
+**/uploads/learning-images/
 
 # Instructor-only assessment materials
 learning-content/instructor-only/

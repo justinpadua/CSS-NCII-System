@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { listContentCompetencies, listDiscussionStages, previewDiscussionStageSource, updateDiscussionStage } from './learningContentApi.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { listContentCompetencies, listDiscussionStages, previewDiscussionStageSource, updateDiscussionStage, uploadLearningImage } from './learningContentApi.js'
 import { listDiscussions } from './courseStructureApi.js'
+import SafeMarkdown from './SafeMarkdown.jsx'
+import { buildLearningImageMarkdown, findLearningImageReferences, removeLearningImageReference } from './learningImageMarkdown.js'
 
 const STAGES = [
   { code: 'PRE_TEST', title: 'Pre-test' },
@@ -32,16 +34,108 @@ function LearningContentManagement({ onSessionExpired }) {
   const [notice, setNotice] = useState('')
   const [sourcePreview, setSourcePreview] = useState(null)
   const [sourceLoading, setSourceLoading] = useState(false)
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [imageAltText, setImageAltText] = useState('')
+  const [imageCaption, setImageCaption] = useState('')
+  const [uploadedImage, setUploadedImage] = useState(null)
+  const [imageUploading, setImageUploading] = useState(false)
+  const [showLessonPreview, setShowLessonPreview] = useState(false)
+  const editorRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   const competency = useMemo(() => competencies.find(item => item.code === selectedCode) ?? null,
     [competencies, selectedCode])
   const selectedDiscussion = discussions.find(item => String(item.id) === String(selectedDiscussionId)) ?? null
   const selectedStage = stages.find(item => item.stageCode === selectedStageCode) ?? null
+  const editorBody = draftBody ?? selectedStage?.contentBody ?? ''
+  const lessonImages = findLearningImageReferences(editorBody)
 
   const handleError = useCallback((requestError) => {
     setError(errorMessage(requestError))
     if (requestError.status === 401) onSessionExpired()
   }, [onSessionExpired])
+
+  useEffect(() => () => {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+  }, [imagePreviewUrl])
+
+  function resetImageUpload() {
+    setImageFile(null)
+    setImagePreviewUrl('')
+    setImageAltText('')
+    setImageCaption('')
+    setUploadedImage(null)
+  }
+
+  function chooseImage(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (!['jpg', 'jpeg', 'png', 'webp'].includes(extension)) {
+      setError('Choose a JPG, PNG, or WEBP image.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image files must be 5 MB or smaller.')
+      return
+    }
+    setError('')
+    resetImageUpload()
+    setImageFile(file)
+    setImagePreviewUrl(URL.createObjectURL(file))
+  }
+
+  async function uploadSelectedImage() {
+    if (!imageFile) return
+    setImageUploading(true)
+    setError('')
+    try {
+      setUploadedImage(await uploadLearningImage(imageFile))
+      setNotice('Image uploaded. Review its text and insert it into the lesson when ready.')
+    } catch (requestError) {
+      handleError(requestError)
+    } finally {
+      setImageUploading(false)
+    }
+  }
+
+  function insertUploadedImage() {
+    if (!uploadedImage || !selectedStage) return
+    let markdown
+    try {
+      markdown = buildLearningImageMarkdown({
+        url: uploadedImage.url,
+        altText: imageAltText,
+        caption: imageCaption,
+      })
+    } catch (insertError) {
+      setError(insertError.message)
+      return
+    }
+    const editor = editorRef.current
+    const source = editorBody
+    const start = editor?.selectionStart ?? source.length
+    const end = editor?.selectionEnd ?? start
+    const prefix = start > 0 && source[start - 1] !== '\n' ? '\n\n' : ''
+    const suffix = end < source.length && source[end] !== '\n' ? '\n\n' : ''
+    const updated = source.slice(0, start) + prefix + markdown + suffix + source.slice(end)
+    const caret = start + prefix.length + markdown.length
+    setDraftBody(updated)
+    setNotice('Image reference inserted into the lesson draft. Save the stage to publish it.')
+    requestAnimationFrame(() => {
+      if (!editorRef.current) return
+      editorRef.current.focus()
+      editorRef.current.setSelectionRange(caret, caret)
+    })
+    resetImageUpload()
+  }
+
+  function removeImageReference(reference) {
+    setDraftBody(currentBody => removeLearningImageReference(currentBody ?? selectedStage?.contentBody ?? '', reference))
+    setNotice('Image removed from this lesson draft. Save the stage to publish the change.')
+  }
 
   const loadCompetencies = useCallback(async () => {
     try {
@@ -117,6 +211,7 @@ function LearningContentManagement({ onSessionExpired }) {
       setDraftTitle(null)
       setDraftBody(null)
       setSourcePreview(null)
+      resetImageUpload()
       setNotice(`${selectedStage.title} content saved.`)
     } catch (requestError) {
       handleError(requestError)
@@ -132,6 +227,8 @@ function LearningContentManagement({ onSessionExpired }) {
     setDraftTitle(null)
     setDraftBody(null)
     setSourcePreview(null)
+    resetImageUpload()
+    setShowLessonPreview(false)
     setError('')
     setNotice('')
   }
@@ -160,7 +257,7 @@ function LearningContentManagement({ onSessionExpired }) {
           <span className="mt-1 block text-xs font-normal text-slate-500">In the current schema, each COC is stored as its competency record.</span>
         </div>
         <label className="block text-sm font-semibold text-slate-700">Discussion
-          <select value={selectedDiscussionId} onChange={event => { setSelectedDiscussionId(event.target.value); setDraftTitle(null); setDraftBody(null); setSourcePreview(null); setNotice('') }} disabled={!competency || discussions.length === 0} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal text-slate-900">
+          <select value={selectedDiscussionId} onChange={event => { setSelectedDiscussionId(event.target.value); setDraftTitle(null); setDraftBody(null); setSourcePreview(null); setNotice(''); resetImageUpload(); setShowLessonPreview(false) }} disabled={!competency || discussions.length === 0} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal text-slate-900">
             {discussions.length === 0 ? <option value="">No Discussions available</option> : discussions.map(item => <option key={item.id} value={item.id}>{item.displayOrder}. {item.title}</option>)}
           </select>
         </label>
@@ -183,7 +280,7 @@ function LearningContentManagement({ onSessionExpired }) {
                 const item = stages.find(value => value.stageCode === stage.code)
                 return (
                   <li key={stage.code}>
-                    <button type="button" onClick={() => { setSelectedStageCode(stage.code); setDraftTitle(null); setDraftBody(null); setSourcePreview(null); setNotice('') }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left ${selectedStageCode === stage.code ? 'bg-teal-50 text-teal-950 ring-1 ring-teal-200' : 'text-slate-700 hover:bg-slate-50'}`}>
+                    <button type="button" onClick={() => { setSelectedStageCode(stage.code); setDraftTitle(null); setDraftBody(null); setSourcePreview(null); setNotice(''); resetImageUpload(); setShowLessonPreview(false) }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left ${selectedStageCode === stage.code ? 'bg-teal-50 text-teal-950 ring-1 ring-teal-200' : 'text-slate-700 hover:bg-slate-50'}`}>
                       <span><span className="font-semibold">{index + 1}. {stage.title}</span><span className="mt-0.5 block text-xs text-slate-500">{item?.active ? 'Active' : 'Inactive'}</span></span>
                       <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${item?.hasContent ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{item?.hasContent ? 'Configured' : 'Empty'}</span>
                     </button>
@@ -225,12 +322,43 @@ function LearningContentManagement({ onSessionExpired }) {
                   </div>}
                 </div>
                 <label className="block text-sm font-semibold text-slate-700">Stage title<input value={draftTitle ?? selectedStage.title} onChange={event => setDraftTitle(event.target.value)} required maxLength={200} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal text-slate-900" /></label>
-                <label className="block text-sm font-semibold text-slate-700">Content body
-                  <textarea value={draftBody ?? selectedStage.contentBody} onChange={event => setDraftBody(event.target.value)} rows={14} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 font-mono text-sm font-normal text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/20" placeholder="Write instructional text here. Markdown image and video references are supported." />
-                </label>
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <label htmlFor="learning-stage-content" className="text-sm font-semibold text-slate-700">Content body</label>
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-teal-700 px-3 py-2 text-sm font-semibold text-teal-900 hover:bg-teal-50">Upload Image</button>
+                    <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={chooseImage} className="hidden" />
+                  </div>
+                  <textarea id="learning-stage-content" ref={editorRef} value={editorBody} onChange={event => setDraftBody(event.target.value)} rows={14} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 font-mono text-sm font-normal text-slate-900 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-700/20" placeholder="Write instructional text here. Use Upload Image to add lesson pictures." />
+                </div>
+
+                {imageFile && <section aria-label="Image upload preview" className="space-y-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
+                  <div className="flex flex-wrap items-start gap-4">
+                    <img src={imagePreviewUrl} alt="Selected image preview" className="max-h-48 max-w-full rounded-lg border border-slate-200 bg-white object-contain" />
+                    <div className="min-w-48 flex-1 space-y-3">
+                      <p className="break-all text-xs text-slate-600">{imageFile.name} · {(imageFile.size / 1024).toFixed(0)} KB</p>
+                      <label className="block text-sm font-medium text-slate-700">Alternative text <span className="font-normal text-slate-500">(optional)</span><input value={imageAltText} onChange={event => setImageAltText(event.target.value)} maxLength={300} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Describe the image for screen readers" /></label>
+                      <label className="block text-sm font-medium text-slate-700">Caption <span className="font-normal text-slate-500">(optional)</span><input value={imageCaption} onChange={event => setImageCaption(event.target.value)} maxLength={300} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder="Caption shown below the image" /></label>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {!uploadedImage ? <button type="button" onClick={uploadSelectedImage} disabled={imageUploading} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{imageUploading ? 'Uploading…' : 'Upload image'}</button> : <button type="button" onClick={insertUploadedImage} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white">Insert at cursor</button>}
+                    <button type="button" onClick={resetImageUpload} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+                  </div>
+                  {uploadedImage && <p role="status" className="text-xs text-emerald-800">Image uploaded and ready to insert. It is not part of the lesson until you insert and save the stage.</p>}
+                </section>}
+
+                {lessonImages.length > 0 && <section className="rounded-xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold text-slate-800">Images in this lesson ({lessonImages.length})</h3>
+                  <ul className="mt-2 space-y-2">{lessonImages.map((image, index) => <li key={`${image.url}-${image.start}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"><span className="min-w-0 truncate text-sm text-slate-700">{image.altText || `Image ${index + 1}`}{image.caption ? ` · ${image.caption}` : ''}</span><button type="button" onClick={() => removeImageReference(image)} className="shrink-0 text-sm font-semibold text-red-700 underline underline-offset-2">Remove</button></li>)}</ul>
+                </section>}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={() => setShowLessonPreview(value => !value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-sky-950 hover:bg-slate-50">{showLessonPreview ? 'Hide lesson preview' : 'Preview lesson'}</button>
+                </div>
+                {showLessonPreview && <section aria-label="Lesson preview" className="rounded-xl border border-slate-200 bg-white p-5"><h3 className="mb-4 text-sm font-semibold text-slate-700">Student lesson preview</h3><SafeMarkdown source={editorBody} imageUrlPrefix="/api/admin/learning-images/" /></section>}
                 <div className="rounded-lg bg-sky-50 p-3 text-xs leading-5 text-sky-950">
                   <p className="font-semibold">Text and media references</p>
-                  <p>Use plain text or Markdown. For an image: <code>![Alt text](https://…)</code>. For a video: <code>[Watch video](https://…)</code>. Media files stay outside the database; the stage body stores the reference.</p>
+                  <p>Use Upload Image to preview and insert JPG, PNG, or WEBP files. Images are stored outside the database; the stage body stores a safe image reference. Existing video links remain supported.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button type="submit" disabled={busy} className="rounded-lg bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-900 disabled:cursor-wait disabled:opacity-60">{busy ? 'Saving…' : 'Save stage content'}</button>

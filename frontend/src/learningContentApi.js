@@ -20,3 +20,9 @@ export function updateDiscussionStage(competencyId, discussionId, stageCode, bod
     body,
   })
 }
+
+export function uploadLearningImage(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return requestAdminApi('/api/admin/learning-images', { method: 'POST', body: formData })
+}

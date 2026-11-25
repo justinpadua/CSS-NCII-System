@@ -21,7 +21,7 @@ function errorText(error) {
   return error.message || 'The learning request could not be completed. Please try again.'
 }
 
-export default function StudentLearningDashboard({ student, onLogout, onSessionExpired, busy, sessionError }) {
+export default function StudentLearningDashboard({ student, onSessionExpired, sessionError }) {
   const [dashboard, setDashboard] = useState(null)
   const [view, setView] = useState({ page: 'dashboard' })
   const [loading, setLoading] = useState(true)
@@ -236,16 +236,10 @@ export default function StudentLearningDashboard({ student, onLogout, onSessionE
     </button>
   }
 
-  if (loading && !dashboard) return <main className="grid min-h-screen place-items-center bg-slate-100 text-slate-700">Loading your learning dashboard…</main>
+  if (loading && !dashboard) return <main className="grid min-h-[calc(100svh-144px)] place-items-center bg-slate-100 pb-10 text-slate-700 sm:min-h-[calc(100svh-104px)]">Loading your learning dashboard…</main>
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">CSS NC II Learning System</p><h1 className="mt-1 text-lg font-bold">Student Learning Dashboard</h1></div>
-          <div className="flex items-center gap-3"><span className="hidden text-sm text-slate-600 sm:block">{student.fullName} <span className="text-slate-400">·</span> {student.accountId}</span><button type="button" onClick={onLogout} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-sky-950 hover:bg-slate-50 disabled:opacity-60">{busy ? 'Logging out…' : 'Log out'}</button></div>
-        </div>
-      </header>
+    <div className="min-h-[calc(100svh-144px)] bg-slate-100 pb-10 text-slate-900 sm:min-h-[calc(100svh-104px)]">
       <main className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6 lg:p-8">
         {sessionError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{sessionError}</p>}
         {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</p>}
