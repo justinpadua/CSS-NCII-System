@@ -83,7 +83,8 @@ public class AssessmentManagementService {
         assessment.setInstructions(optionalText(instructions));
         assessment.setPassPercentage(GENERALIZED_POST_TEST.equals(type)
             ? GENERALIZED_PASS_PERCENTAGE : null);
-        assessment.setActive(active);
+        // Creation always produces a Draft. Activation is a separate Admin update operation.
+        assessment.setActive(false);
         assessment.setCreatedAt(now);
         assessment.setUpdatedAt(now);
         return assessmentRepository.save(assessment);

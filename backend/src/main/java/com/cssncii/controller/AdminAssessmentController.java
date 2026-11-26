@@ -70,7 +70,7 @@ public class AdminAssessmentController {
             throw new IllegalArgumentException("Discussion assessment type must be PRE_TEST, ACTIVITY, or DISCUSSION_POST_TEST.");
         }
         Assessment saved = assessmentService.createAssessment(type, discussionId, null, request.title(), request.instructions(),
-            Boolean.TRUE.equals(request.active()));
+            false);
         return ResponseEntity.status(HttpStatus.CREATED).body(assessmentResponse(saved));
     }
 
@@ -87,7 +87,7 @@ public class AdminAssessmentController {
             throw new IllegalArgumentException("Only GENERALIZED_POST_TEST can be assigned to a competency.");
         }
         Assessment saved = assessmentService.createAssessment(
-            GENERALIZED_TYPE, null, competencyId, request.title(), request.instructions(), Boolean.TRUE.equals(request.active()));
+            GENERALIZED_TYPE, null, competencyId, request.title(), request.instructions(), false);
         return ResponseEntity.status(HttpStatus.CREATED).body(assessmentResponse(saved));
     }
 

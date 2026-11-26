@@ -102,14 +102,26 @@ class AdminAssessmentControllerTest {
     }
 
     @Test
-    void adminCanExplicitlyCreatePublishedAssessment() throws Exception {
-        when(assessmentService.createAssessment("ACTIVITY", 41L, null, "Published activity", null, true))
-            .thenReturn(assessment(11L, 41L, null, "ACTIVITY"));
+    void createRequestsCannotPublishDiscussionOrGeneralizedAssessments() throws Exception {
+        Assessment discussionDraft = assessment(11L, 41L, null, "ACTIVITY");
+        discussionDraft.setActive(false);
+        when(assessmentService.createAssessment("ACTIVITY", 41L, null, "Activity", null, false))
+            .thenReturn(discussionDraft);
+        Assessment generalizedDraft = assessment(12L, null, 2L, "GENERALIZED_POST_TEST");
+        generalizedDraft.setActive(false);
+        when(assessmentService.createAssessment("GENERALIZED_POST_TEST", null, 2L,
+            "COC 1 Generalized Post-test", null, false)).thenReturn(generalizedDraft);
 
         mockMvc.perform(post(DISCUSSION_URL).session(adminSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"assessmentType\":\"ACTIVITY\",\"title\":\"Published activity\",\"active\":true}"))
-            .andExpect(status().isCreated());
-        verify(assessmentService).createAssessment("ACTIVITY", 41L, null, "Published activity", null, true);
+                .content("{\"assessmentType\":\"ACTIVITY\",\"title\":\"Activity\",\"active\":true}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.active").value(false));
+        mockMvc.perform(post("/api/admin/competencies/2/assessments").session(adminSession).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"assessmentType\":\"GENERALIZED_POST_TEST\",\"title\":\"COC 1 Generalized Post-test\",\"active\":true}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.active").value(false));
+        verify(assessmentService).createAssessment("ACTIVITY", 41L, null, "Activity", null, false);
+        verify(assessmentService).createAssessment("GENERALIZED_POST_TEST", null, 2L,
+            "COC 1 Generalized Post-test", null, false);
     }
 
     @Test

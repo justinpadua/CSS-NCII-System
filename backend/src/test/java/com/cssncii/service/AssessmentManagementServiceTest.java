@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 
 import com.cssncii.entity.AnswerChoice;
 import com.cssncii.entity.Assessment;
+import com.cssncii.entity.Competency;
+import com.cssncii.entity.Discussion;
 import com.cssncii.entity.Question;
 import com.cssncii.repository.AnswerChoiceRepository;
 import com.cssncii.repository.AssessmentAttemptRepository;
@@ -30,6 +32,8 @@ class AssessmentManagementServiceTest {
     private AnswerChoiceRepository choiceRepository;
     private AttemptAnswerRepository attemptAnswerRepository;
     private AssessmentAttemptRepository assessmentAttemptRepository;
+    private DiscussionRepository discussionRepository;
+    private CompetencyRepository competencyRepository;
     private Assessment assessment;
     private Question savedQuestion;
     private final List<AnswerChoice> savedChoices = new ArrayList<>();
@@ -41,6 +45,8 @@ class AssessmentManagementServiceTest {
         choiceRepository = mock(AnswerChoiceRepository.class);
         attemptAnswerRepository = mock(AttemptAnswerRepository.class);
         assessmentAttemptRepository = mock(AssessmentAttemptRepository.class);
+        discussionRepository = mock(DiscussionRepository.class);
+        competencyRepository = mock(CompetencyRepository.class);
         assessment = new Assessment(); assessment.setId(8L); assessment.setAssessmentType("PRE_TEST");
         when(assessmentRepository.findById(8L)).thenReturn(Optional.of(assessment));
         when(questionRepository.findByAssessment_IdOrderByDisplayOrderAsc(8L)).thenReturn(List.of());
@@ -57,13 +63,68 @@ class AssessmentManagementServiceTest {
         });
         service = new AssessmentManagementService(
             assessmentRepository, questionRepository, choiceRepository,
-            mock(DiscussionRepository.class), mock(CompetencyRepository.class), attemptAnswerRepository,
+            discussionRepository, competencyRepository, attemptAnswerRepository,
             assessmentAttemptRepository);
     }
 
     @Test
     void newAssessmentEntityDefaultsToDraft() {
         assertEquals(false, new Assessment().isActive());
+    }
+
+    @Test
+    void createsDiscussionAssessmentAsDraftEvenWhenCallerRequestsActive() {
+        Discussion discussion = new Discussion();
+        discussion.setId(41L);
+        when(discussionRepository.findById(41L)).thenReturn(Optional.of(discussion));
+        when(assessmentRepository.findByDiscussion_IdAndAssessmentType(41L, "PRE_TEST"))
+            .thenReturn(Optional.empty());
+        when(assessmentRepository.save(any(Assessment.class))).thenAnswer(call -> call.getArgument(0));
+
+        Assessment created = service.createAssessment("PRE_TEST", 41L, null, "Pre-test", null, true);
+
+        assertEquals(false, created.isActive());
+        verify(assessmentRepository).save(argThat(value -> !value.isActive()));
+    }
+
+    @Test
+    void createsGeneralizedAssessmentAsDraftWhenCallerDoesNotRequestActivation() {
+        Competency competency = new Competency();
+        competency.setId(2L);
+        when(competencyRepository.findById(2L)).thenReturn(Optional.of(competency));
+        when(assessmentRepository.findByCompetency_IdAndAssessmentType(2L, "GENERALIZED_POST_TEST"))
+            .thenReturn(Optional.empty());
+        when(assessmentRepository.save(any(Assessment.class))).thenAnswer(call -> call.getArgument(0));
+
+        Assessment created = service.createAssessment("GENERALIZED_POST_TEST", null, 2L,
+            "COC 1 Generalized Post-test", null, false);
+
+        assertEquals(false, created.isActive());
+        verify(assessmentRepository).save(argThat(value -> !value.isActive()));
+    }
+
+    @Test
+    void rejectsAssessmentScopeCombinationsThatDoNotMatchTheirType() {
+        assertThrows(IllegalArgumentException.class,
+            () -> service.createAssessment("PRE_TEST", null, null, "Invalid", null, false));
+        assertThrows(IllegalArgumentException.class,
+            () -> service.createAssessment("PRE_TEST", 41L, 2L, "Invalid", null, false));
+        assertThrows(IllegalArgumentException.class,
+            () -> service.createAssessment("GENERALIZED_POST_TEST", 41L, null, "Invalid", null, false));
+        assertThrows(IllegalArgumentException.class,
+            () -> service.createAssessment("GENERALIZED_POST_TEST", null, null, "Invalid", null, false));
+
+        verify(assessmentRepository, never()).save(any(Assessment.class));
+    }
+
+    @Test
+    void existingAssessmentCanStillBeActivatedThroughUpdate() {
+        when(assessmentRepository.save(any(Assessment.class))).thenAnswer(call -> call.getArgument(0));
+
+        Assessment updated = service.updateAssessment(8L, "Pre-test", "Instructions", true);
+
+        assertEquals(true, updated.isActive());
+        verify(assessmentRepository).save(argThat(Assessment::isActive));
     }
 
     @Test
