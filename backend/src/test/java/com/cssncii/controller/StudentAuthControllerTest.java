@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.session.SessionRegistry;
@@ -103,6 +104,36 @@ class StudentAuthControllerTest {
         mockMvc.perform(get(ME)).andExpect(status().isUnauthorized());
         MockHttpSession adminSession = adminLoginSession();
         mockMvc.perform(get(ME).session(adminSession)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void corsAllowsProductionFrontendCredentialsOnStudentMeAndPreflight() throws Exception {
+        String productionOrigin = "https://css-ncii-frontend.onrender.com";
+
+        mockMvc.perform(options(ME)
+                .header(HttpHeaders.ORIGIN, productionOrigin)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "x-csrf-token"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, productionOrigin))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+
+        mockMvc.perform(get(ME).header(HttpHeaders.ORIGIN, productionOrigin))
+            .andExpect(status().isUnauthorized())
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, productionOrigin))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+    }
+
+    @Test
+    void corsPreservesConfiguredLocalhostOriginAndDoesNotUseWildcard() throws Exception {
+        String localOrigin = "http://localhost:5173";
+
+        mockMvc.perform(options(ME)
+                .header(HttpHeaders.ORIGIN, localOrigin)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, localOrigin))
+            .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
     }
 
     @Test

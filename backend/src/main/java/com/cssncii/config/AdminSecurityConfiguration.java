@@ -34,6 +34,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebSecurity
 public class AdminSecurityConfiguration {
+    private static final String PRODUCTION_FRONTEND_ORIGIN = "https://css-ncii-frontend.onrender.com";
+
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -81,7 +83,10 @@ public class AdminSecurityConfiguration {
         @Value("${app.cors.allowed-origin:http://localhost:5173}") String allowedOrigin
     ) {
         CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of(allowedOrigin));
+        if ("*".equals(allowedOrigin.trim())) {
+            throw new IllegalStateException("CORS origins must be explicitly configured when credentials are enabled.");
+        }
+        cors.setAllowedOrigins(List.of(allowedOrigin.trim(), PRODUCTION_FRONTEND_ORIGIN));
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Content-Type", "X-CSRF-TOKEN"));
         cors.setAllowCredentials(true);

@@ -377,3 +377,17 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - The Student image service now checks active account, active referenced content, course relationships, and stage accessibility before asking storage to retrieve bytes. Cloudinary images are fetched server-side using a short-lived signed private-download URL, limited to the existing 5 MB maximum, revalidated as supported image bytes, and returned through the existing authenticated Student endpoint. Signed URLs and provider exception messages are not returned or logged.
 - **Focused backend verification:** 23 tests passed, 0 failures/errors/skips across local storage, Cloudinary upload/download options and mocked transfer, configuration validation, Student authorization-before-fetch, and Admin/Student endpoint compatibility. These tests used mocks and temporary files; they did not connect to MySQL or Cloudinary. No frontend files changed, so frontend lint/build were not run.
 - No database schema change, migration, SQL, or database write was performed. Existing local image files were not removed. Existing local assets are not automatically copied to Cloudinary; any image references already in published lessons require a one-time asset migration before switching the production provider.
+
+## 43. Production Frontend CORS Support (2026-11-26)
+
+- Added the exact Render frontend origin to the Spring Security CORS allowlist while preserving the configured local development origin. Credentials remain enabled only for explicit origins; wildcard origins are rejected.
+- CORS remains integrated through Spring Security for `/api/**`, including Student `/auth/me` and CSRF endpoints. CSRF protection and the allowed `X-CSRF-TOKEN` header are unchanged.
+- **Backend verification:** `StudentAuthControllerTest` passed (9 tests, 0 failures/errors/skips), including production-origin preflight and `/api/student/auth/me` CORS responses, credential support, and localhost origin compatibility. No database was accessed.
+- For Render, configure `APP_CORS_ALLOWED_ORIGIN=https://css-ncii-frontend.onrender.com` and `SESSION_COOKIE_SECURE=true`. The existing `SameSite=Lax` cookie setting is retained; no database, authentication, or business logic was changed.
+
+## 44. Official Website Branding (2026-11-26)
+
+- Updated the document title to `CSS NC II Learning Management System` and configured `/favicon.png`.
+- The shared branding component retains the original three-logo row, order, sizing, and spacing across login, Admin, and Student layouts. The full `brand-logo.png` asset remains in place but is not displayed.
+- Created `frontend/public/favicon.png` as an unchanged copy of the existing system emblem at `frontend/public/icon.png`, because the requested favicon path was not present.
+- **Verification:** Frontend production build passed. Confirmed the favicon and three displayed logo assets are present in the Vite production output.
