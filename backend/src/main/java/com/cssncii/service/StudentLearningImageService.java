@@ -23,13 +23,13 @@ public class StudentLearningImageService {
     private final StudentRepository studentRepository;
     private final LearningStageContentRepository contentRepository;
     private final StudentStageProgressRepository stageProgressRepository;
-    private final LearningImageStorageService imageStorage;
+    private final LearningImageStore imageStorage;
 
     public StudentLearningImageService(
         StudentRepository studentRepository,
         LearningStageContentRepository contentRepository,
         StudentStageProgressRepository stageProgressRepository,
-        LearningImageStorageService imageStorage
+        LearningImageStore imageStorage
     ) {
         this.studentRepository = studentRepository;
         this.contentRepository = contentRepository;
@@ -37,13 +37,15 @@ public class StudentLearningImageService {
         this.imageStorage = imageStorage;
     }
 
-    public LearningImageStorageService.StoredImage getImageForStudent(Long studentId, String filename) {
+    public LearningImageStore.StoredImage getImageForStudent(Long studentId, String filename) {
+        if (!LearningImageValidation.isValidFilename(filename)) {
+            throw new EntityNotFoundException("Learning image not found.");
+        }
         Student student = studentRepository.findById(studentId)
             .orElseThrow(() -> new EntityNotFoundException("Student not found."));
         if (student.getStatus() != StudentStatus.ACTIVE) {
             throw new EntityNotFoundException("Learning image not found.");
         }
-        LearningImageStorageService.StoredImage storedImage = imageStorage.get(filename);
         String reference = IMAGE_REFERENCE_PREFIX + filename;
         List<LearningStageContent> candidateStages = contentRepository.findActiveContentReferencingImage(reference);
         for (LearningStageContent content : candidateStages) {
@@ -61,7 +63,7 @@ public class StudentLearningImageService {
             boolean postTestInProgress = progressRows.stream().anyMatch(row -> POST_TEST.equals(row.getStageCode())
                 && IN_PROGRESS.equals(row.getStatus()));
             if (postTestInProgress && !POST_TEST.equals(content.getStageCode())) continue;
-            return storedImage;
+            return imageStorage.get(filename);
         }
         throw new EntityNotFoundException("Learning image not found.");
     }

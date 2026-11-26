@@ -2,7 +2,7 @@ package com.cssncii.controller;
 
 import com.cssncii.dto.ApiErrorResponse;
 import com.cssncii.dto.LearningImageDtos.UploadResponse;
-import com.cssncii.service.LearningImageStorageService;
+import com.cssncii.service.LearningImageStore;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -20,15 +20,15 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/admin/learning-images")
 public class AdminLearningImageController {
-    private final LearningImageStorageService imageStorage;
+    private final LearningImageStore imageStorage;
 
-    public AdminLearningImageController(LearningImageStorageService imageStorage) {
+    public AdminLearningImageController(LearningImageStore imageStorage) {
         this.imageStorage = imageStorage;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public UploadResponse upload(@RequestParam("file") MultipartFile file) {
-        LearningImageStorageService.UploadedImage uploaded = imageStorage.store(file);
+        LearningImageStore.UploadedImage uploaded = imageStorage.store(file);
         return new UploadResponse(uploaded.filename(),
             "/api/student/learning/images/" + uploaded.filename(), uploaded.contentType());
     }

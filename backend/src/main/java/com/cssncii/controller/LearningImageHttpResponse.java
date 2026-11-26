@@ -1,7 +1,6 @@
 package com.cssncii.controller;
 
-import com.cssncii.service.LearningImageStorageService.StoredImage;
-import org.springframework.core.io.FileSystemResource;
+import com.cssncii.service.LearningImageStore.StoredImage;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -16,6 +15,6 @@ final class LearningImageHttpResponse {
             .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + image.filename() + "\"")
             .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
             .header("X-Content-Type-Options", "nosniff")
-            .body(new FileSystemResource(image.path()));
+            .body(image.resource());
     }
 }

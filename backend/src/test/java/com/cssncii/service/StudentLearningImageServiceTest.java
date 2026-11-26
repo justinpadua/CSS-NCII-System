@@ -100,6 +100,34 @@ class StudentLearningImageServiceTest {
     }
 
     @Test
+    void checksStudentStageAuthorizationBeforeRetrievingCloudImage() {
+        progressRows = List.of(progress("DEFINITIONS", "LOCKED"));
+        java.util.concurrent.atomic.AtomicBoolean cloudDownloadCalled = new java.util.concurrent.atomic.AtomicBoolean();
+        CloudinaryImageClient client = new CloudinaryImageClient() {
+            @Override
+            public void upload(byte[] bytes, String publicId, String format, String deliveryType) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public byte[] download(String publicId, String format, String deliveryType) {
+                cloudDownloadCalled.set(true);
+                throw new AssertionError("Cloudinary must not be called for a locked stage image.");
+            }
+        };
+        var cloudStorage = new CloudinaryImageStorageService(client);
+        service = new StudentLearningImageService(
+            proxy(StudentRepository.class, (method, args) -> Optional.of(activeStudent())),
+            proxy(LearningStageContentRepository.class, (method, args) -> List.of(stage)),
+            proxy(StudentStageProgressRepository.class, (method, args) -> progressRows),
+            cloudStorage);
+
+        assertThrows(EntityNotFoundException.class,
+            () -> service.getImageForStudent(STUDENT_ID, referencedFilename()));
+        assertFalse(cloudDownloadCalled.get());
+    }
+
+    @Test
     void rejectsEarlierStageImageAfterDiscussionPostTestHasStarted() {
         progressRows = List.of(progress("DEFINITIONS", "COMPLETED"), progress("POST_TEST", "IN_PROGRESS"));
 
@@ -128,6 +156,12 @@ class StudentLearningImageServiceTest {
         progress.setStageCode(stageCode);
         progress.setStatus(status);
         return progress;
+    }
+
+    private Student activeStudent() {
+        Student student = new Student();
+        student.setStatus(StudentStatus.ACTIVE);
+        return student;
     }
 
     @SuppressWarnings("unchecked")

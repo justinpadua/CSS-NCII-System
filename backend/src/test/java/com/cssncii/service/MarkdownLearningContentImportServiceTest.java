@@ -3,9 +3,14 @@ package com.cssncii.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.ResourceLoader;
 
 class MarkdownLearningContentImportServiceTest {
     private final MarkdownLearningContentImportService service =
@@ -44,10 +49,28 @@ class MarkdownLearningContentImportServiceTest {
     }
 
     @Test
-    void missingSourcePlaceholderIsNotMadeImportable() {
+    void completedActivitySourceIsAvailableLoadableAndContainsActivityContent() {
         var preview = service.preview("COC2", 1, "Discuss the concepts of computer network", "ACTIVITY", "");
 
         assertEquals("learning-content/COC-2/Lesson-01/06-Activity.md", preview.sourcePath());
+        assertTrue(preview.sourceAvailable());
+        assertTrue(preview.canLoadIntoEditor());
+        assertTrue(preview.stageBodyPreview().contains("Activity: Cable It Right"));
+        assertTrue(preview.stageBodyPreview().contains("Part E – Troubleshoot It"));
+        assertTrue(preview.stageBodyPreview().contains("Expected output:"));
+    }
+
+    @Test
+    void explicitMissingContentMarkerIsNotMadeImportable() {
+        String sourcePath = "learning-content/COC-2/Lesson-01/06-Activity.md";
+        String placeholder = "# Activity\n\nMISSING / NOT SEPARATELY IDENTIFIED IN THE SOURCE\n";
+        ResourceLoader loader = mock(ResourceLoader.class);
+        when(loader.getResource("classpath:" + sourcePath)).thenReturn(
+            new ByteArrayResource(placeholder.getBytes(StandardCharsets.UTF_8)));
+        var markerService = new MarkdownLearningContentImportService(loader);
+
+        var preview = markerService.preview("COC2", 1, "Discuss the concepts of computer network", "ACTIVITY", "");
+
         assertFalse(preview.sourceAvailable());
         assertFalse(preview.canLoadIntoEditor());
         assertTrue(preview.message().contains("marks this stage as missing"));

@@ -17,6 +17,7 @@ import com.cssncii.repository.StudentRepository;
 import com.cssncii.repository.StudentStageProgressRepository;
 import com.cssncii.security.AdminUserDetailsService;
 import com.cssncii.security.StudentPrincipal;
+import com.cssncii.service.LearningImageStore;
 import com.cssncii.service.LearningImageStorageService;
 import com.cssncii.service.StudentLearningImageService;
 import java.awt.image.BufferedImage;
@@ -43,7 +44,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 class StudentLearningImageControllerTest {
     private static final Long STUDENT_ID = 73L;
     @Autowired private MockMvc mockMvc;
-    @Autowired private LearningImageStorageService imageStorage;
+    @Autowired private LearningImageStore imageStorage;
 
     @Test
     void imageEndpointRequiresStudentRoleAndServesOnlyTheAuthenticatedStudentsAuthorizedReference() throws Exception {
@@ -59,7 +60,7 @@ class StudentLearningImageControllerTest {
                     List.of(new SimpleGrantedAuthority("ROLE_STUDENT"))))))
             .andExpect(status().isOk())
             .andExpect(content().contentType("image/png"))
-            .andExpect(content().bytes(Files.readAllBytes(imageStorage.get(filename).path())));
+            .andExpect(content().bytes(imageStorage.get(filename).resource().getContentAsByteArray()));
     }
 
     private String fixtureFilename() {
@@ -84,7 +85,7 @@ class StudentLearningImageControllerTest {
             });
         }
 
-        @Bean LearningImageStorageService learningImageStorageService() { return new LearningImageStorageService(STORAGE.toString()); }
+        @Bean LearningImageStore learningImageStorageService() { return new LearningImageStorageService(STORAGE.toString()); }
 
         @Bean StudentRepository studentRepository() {
             Student student = new Student();
@@ -95,7 +96,7 @@ class StudentLearningImageControllerTest {
             });
         }
 
-        @Bean LearningStageContentRepository learningStageContentRepository(LearningImageStorageService storage) throws Exception {
+        @Bean LearningStageContentRepository learningStageContentRepository(LearningImageStore storage) throws Exception {
             BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
             byte[] png;
             try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -139,7 +140,7 @@ class StudentLearningImageControllerTest {
             StudentRepository students,
             LearningStageContentRepository contents,
             StudentStageProgressRepository progress,
-            LearningImageStorageService storage
+            LearningImageStore storage
         ) {
             return new StudentLearningImageService(students, contents, progress, storage);
         }

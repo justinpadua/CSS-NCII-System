@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.cssncii.config.AdminSecurityConfiguration;
 import com.cssncii.repository.AdminRepository;
 import com.cssncii.security.AdminUserDetailsService;
+import com.cssncii.service.LearningImageStore;
 import com.cssncii.service.LearningImageStorageService;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -33,7 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({AdminSecurityConfiguration.class, AdminUserDetailsService.class, AdminLearningImageControllerTest.TestBeans.class})
 class AdminLearningImageControllerTest {
     @Autowired private MockMvc mockMvc;
-    @Autowired private LearningImageStorageService imageStorage;
+    @Autowired private LearningImageStore imageStorage;
 
     @Test
     void uploadRequiresAdminAndCsrfAndReturnsStudentReference() throws Exception {
@@ -93,7 +94,7 @@ class AdminLearningImageControllerTest {
             });
         }
 
-        @Bean LearningImageStorageService learningImageStorageService() {
+        @Bean LearningImageStore learningImageStorageService() {
             return new LearningImageStorageService(STORAGE.toString());
         }
 

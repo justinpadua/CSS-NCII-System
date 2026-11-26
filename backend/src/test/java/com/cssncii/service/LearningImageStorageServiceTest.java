@@ -39,7 +39,7 @@ class LearningImageStorageServiceTest {
         var uploaded = storage.store(file("photo.jpeg", "image/jpeg", imageBytes("jpg")));
         var restartedStorage = new LearningImageStorageService(uploadDirectory.toString());
 
-        assertTrue(Files.isRegularFile(restartedStorage.get(uploaded.filename()).path()));
+        assertTrue(Files.isRegularFile(uploadDirectory.resolve(restartedStorage.get(uploaded.filename()).filename())));
         assertEquals("image/jpeg", uploaded.contentType());
     }
 
