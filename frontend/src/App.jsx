@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentAdmin, isAdminSessionEnded, loginAdmin, logoutAdmin } from './adminAuth.js'
 import { getCurrentStudent, isStudentSessionEnded, loginStudent, logoutStudent, registerStudent } from './studentAuth.js'
+import { restoreSession } from './sessionRestore.js'
 import StudentManagement from './StudentManagement.jsx'
 import CourseStructureManagement from './CourseStructureManagement.jsx'
 import LearningContentManagement from './LearningContentManagement.jsx'
@@ -48,26 +49,11 @@ function App() {
 
   const checkSession = useCallback(async (showExpiredMessage = false) => {
     try {
-      let currentAdmin = null
-      try {
-        currentAdmin = await getCurrentAdmin()
-      } catch (adminCheckError) {
-        // A Student session is expected to be forbidden from the Admin /me endpoint.
-        if (adminCheckError.status !== 403) throw adminCheckError
-      }
-
-      if (currentAdmin) {
-        setAdmin(currentAdmin)
-        setStudent(null)
-        setSessionCheckError('')
-        return
-      }
-
-      const currentStudent = await getCurrentStudent()
-      setAdmin(null)
-      setStudent(currentStudent)
+      const session = await restoreSession(sessionStateRef.current, { getCurrentAdmin, getCurrentStudent })
+      setAdmin(session.admin)
+      setStudent(session.student)
       setSessionCheckError('')
-      if (!currentStudent && showExpiredMessage) {
+      if (!session.admin && !session.student && showExpiredMessage) {
         if (sessionStateRef.current.student) {
           setStudentLoginError('Your Student session has expired. Please log in again.')
           setLoginMode('student')
@@ -401,7 +387,15 @@ function App() {
         </div>
       )}
     >
-    <main className="grid min-h-[calc(100svh-144px)] place-items-center bg-gradient-to-br from-sky-950 via-sky-900 to-teal-950 p-4 pb-10 sm:min-h-[calc(100svh-104px)]">
+    <main
+      className="grid min-h-[calc(100svh-152px)] place-items-center bg-slate-900 p-4 pb-10 sm:min-h-[calc(100svh-112px)]"
+      style={{
+        backgroundImage: 'linear-gradient(rgba(8, 35, 61, 0.48), rgba(8, 35, 61, 0.58)), url("/assets/login-background.jpg")',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
       <section className="w-full max-w-md rounded-2xl border border-white/30 bg-white/95 p-6 shadow-2xl sm:p-8">
         {loginMode === 'student' ? (
           <section aria-labelledby="student-login-heading">

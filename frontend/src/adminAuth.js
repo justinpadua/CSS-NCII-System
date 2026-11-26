@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? ''
 
 async function readResponse(response) {
   if (response.status === 401) {
@@ -75,7 +75,9 @@ export async function getCurrentAdmin() {
   const response = await fetch(`${API_BASE_URL}/api/admin/auth/me`, {
     credentials: 'include',
   })
-  if (response.status === 401) return null
+  // This is an authentication probe: 401 means no Admin session and 403
+  // commonly means the browser holds an authenticated Student session.
+  if (response.status === 401 || response.status === 403) return null
   return readResponse(response)
 }
 
@@ -83,7 +85,7 @@ export async function isAdminSessionEnded() {
   const response = await fetch(`${API_BASE_URL}/api/admin/auth/me`, {
     credentials: 'include',
   })
-  if (response.status === 401) return true
+  if (response.status === 401 || response.status === 403) return true
   if (response.ok) return false
   await readResponse(response)
   return false

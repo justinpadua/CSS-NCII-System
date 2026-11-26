@@ -13,10 +13,16 @@ function safeImageUrl(value, imageUrlPrefix) {
   const external = safeUrl(value)
   if (external) return external
   const match = value.match(/^\/api\/student\/learning\/images\/([a-f0-9]{32}\.(?:jpg|png|webp))$/)
-  return match ? `${imageUrlPrefix ?? ''}${match[1]}` : null
+  if (!match) return null
+  return imageUrlPrefix ? `${imageUrlPrefix}${match[1]}` : value
 }
 
-function inline(text, keyPrefix, imageUrlPrefix) {
+function renderImage(altText, captionText, key, imageUrl) {
+  const caption = (captionText || '').replace(/&quot;/g, '"')
+  return <figure key={key} className="my-4 max-w-full"><img src={imageUrl} alt={altText} loading="lazy" referrerPolicy="no-referrer" className="h-auto max-h-96 max-w-full rounded-lg object-contain" />{caption && <figcaption className="mt-1 text-sm text-slate-600">{caption}</figcaption>}</figure>
+}
+
+function inline(text, keyPrefix, imageUrlPrefix, allowImages = true) {
   const parts = []
   const pattern = /(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|`([^`]+)`|\*\*([^*]+)\*\*/g
   let cursor = 0
@@ -27,9 +33,8 @@ function inline(text, keyPrefix, imageUrlPrefix) {
     const key = `${keyPrefix}-${index++}`
     const url = safeUrl(match[3] || '')
     const imageUrl = match[1] === '!' ? safeImageUrl(match[3] || '', imageUrlPrefix) : null
-    if (match[1] === '!' && imageUrl) {
-      const caption = (match[4] || '').replace(/&quot;/g, '"')
-      parts.push(<figure key={key} className="my-4 max-w-full"><img src={imageUrl} alt={match[2]} loading="lazy" referrerPolicy="no-referrer" className="h-auto max-h-96 max-w-full rounded-lg object-contain" />{caption && <figcaption className="mt-1 text-sm text-slate-600">{caption}</figcaption>}</figure>)
+    if (match[1] === '!' && imageUrl && allowImages) {
+      parts.push(renderImage(match[2], match[4], key, imageUrl))
     } else if (!match[1] && match[2] !== undefined && url) {
       parts.push(<a key={key} href={url} target="_blank" rel="noreferrer" className="font-medium text-teal-800 underline underline-offset-2">{match[2]}</a>)
     } else if (match[5]) {
@@ -43,6 +48,30 @@ function inline(text, keyPrefix, imageUrlPrefix) {
   }
   if (cursor < text.length) parts.push(text.slice(cursor))
   return parts.map((part, index) => <Fragment key={`${keyPrefix}-part-${index}`}>{part}</Fragment>)
+}
+
+function renderParagraph(text, key, imageUrlPrefix) {
+  const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g
+  const blocks = []
+  let textStart = 0
+  let match
+  let imageIndex = 0
+  const appendText = (start, end) => {
+    const segment = text.slice(start, end)
+    if (segment.trim()) {
+      blocks.push(<p key={`${key}-text-${blocks.length}`} className="my-3 whitespace-pre-wrap leading-7 text-slate-700">{inline(segment, `${key}-text-${blocks.length}`, imageUrlPrefix)}</p>)
+    }
+  }
+
+  while ((match = imagePattern.exec(text)) !== null) {
+    const imageUrl = safeImageUrl(match[2], imageUrlPrefix)
+    if (!imageUrl) continue
+    appendText(textStart, match.index)
+    blocks.push(renderImage(match[1], match[3], `${key}-image-${imageIndex++}`, imageUrl))
+    textStart = imagePattern.lastIndex
+  }
+  appendText(textStart, text.length)
+  return blocks
 }
 
 function renderTable(lines, key, imageUrlPrefix) {
@@ -97,7 +126,7 @@ export default function SafeMarkdown({ source, imageUrlPrefix }) {
     const heading = line.match(/^\s*(#{1,6})\s+(.+)$/)
     if (heading) {
       const Tag = `h${Math.min(heading[1].length + 1, 6)}`
-      blocks.push(<Tag key={`heading-${blocks.length}`} className="mb-2 mt-5 font-bold text-slate-900 first:mt-0">{inline(heading[2], `heading-${blocks.length}`, imageUrlPrefix)}</Tag>)
+      blocks.push(<Tag key={`heading-${blocks.length}`} className="mb-2 mt-5 font-bold text-slate-900 first:mt-0">{inline(heading[2], `heading-${blocks.length}`, imageUrlPrefix, false)}</Tag>)
       index += 1
       continue
     }
@@ -122,7 +151,7 @@ export default function SafeMarkdown({ source, imageUrlPrefix }) {
     }
     const paragraph = []
     while (index < lines.length && lines[index].trim() && !/^\s*(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?|\|.*\|\s*$)/.test(lines[index])) paragraph.push(lines[index++].trim())
-    if (paragraph.length) blocks.push(<p key={`p-${blocks.length}`} className="my-3 whitespace-pre-wrap leading-7 text-slate-700">{inline(paragraph.join(' '), `p-${blocks.length}`, imageUrlPrefix)}</p>)
+    if (paragraph.length) blocks.push(...renderParagraph(paragraph.join(' '), `p-${blocks.length}`, imageUrlPrefix))
     else index += 1
   }
   return <div className="break-words">{blocks}</div>
