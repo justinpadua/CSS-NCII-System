@@ -24,6 +24,7 @@ temp/
 .env.*
 **/.env
 **/.env.*
+tidb-truststore.base64.txt
 
 # Operating-system metadata
 .DS_Store
