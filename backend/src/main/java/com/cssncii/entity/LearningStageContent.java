@@ -12,6 +12,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 
 @Entity
 @Table(name = "learning_stage_contents",
@@ -37,6 +39,9 @@ public class LearningStageContent {
     @Column(name = "content_body", nullable = false, columnDefinition = "LONGTEXT")
     private String contentBody;
 
+    @Column(name = "youtube_video_urls", columnDefinition = "LONGTEXT")
+    private String youtubeVideoUrls;
+
     @Column(name = "display_order", nullable = false, columnDefinition = "TINYINT UNSIGNED")
     private short displayOrder;
 
@@ -60,6 +65,15 @@ public class LearningStageContent {
     public void setTitle(String title) { this.title = title; }
     public String getContentBody() { return contentBody; }
     public void setContentBody(String contentBody) { this.contentBody = contentBody; }
+    public List<String> getYoutubeVideoUrls() {
+        if (youtubeVideoUrls == null || youtubeVideoUrls.isBlank()) return List.of();
+        return Arrays.stream(youtubeVideoUrls.split("\\R"))
+            .filter(url -> !url.isBlank())
+            .toList();
+    }
+    public void setYoutubeVideoUrls(List<String> urls) {
+        youtubeVideoUrls = urls == null || urls.isEmpty() ? null : String.join("\n", urls);
+    }
     public short getDisplayOrder() { return displayOrder; }
     public void setDisplayOrder(short displayOrder) { this.displayOrder = displayOrder; }
     public boolean isActive() { return active; }

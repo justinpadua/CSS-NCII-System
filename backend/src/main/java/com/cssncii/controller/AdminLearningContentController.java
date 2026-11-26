@@ -91,7 +91,8 @@ public class AdminLearningContentController {
             .findFirst()
             .orElseThrow(() -> new EntityNotFoundException("Learning stage content not found."));
         LearningStageContent updated = learningContentService.updateStageContent(
-            existing.getId(), request.title(), request.contentBody(), existing.getDisplayOrder());
+            existing.getId(), request.title(), request.contentBody(), existing.getDisplayOrder(),
+            request.youtubeVideoUrls());
         return toResponse(updated);
     }
 
@@ -133,8 +134,10 @@ public class AdminLearningContentController {
 
     private StageContentResponse toResponse(LearningStageContent stage) {
         String body = stage.getContentBody();
+        List<String> youtubeVideoUrls = stage.getYoutubeVideoUrls();
         return new StageContentResponse(stage.getId(), stage.getDiscussion().getId(), stage.getStageCode(),
-            stage.getTitle(), body, stage.getDisplayOrder(), stage.isActive(), body != null && !body.isBlank());
+            stage.getTitle(), body, youtubeVideoUrls, stage.getDisplayOrder(), stage.isActive(),
+            body != null && !body.isBlank() || !youtubeVideoUrls.isEmpty());
     }
 
     private ResponseEntity<ApiErrorResponse> error(HttpStatus status, String message) {

@@ -124,7 +124,7 @@ public class LearningContentService {
 
     @Transactional
     public LearningStageContent updateStageContent(
-        Long contentId, String title, String contentBody, short displayOrder
+        Long contentId, String title, String contentBody, short displayOrder, List<String> youtubeVideoUrls
     ) {
         LearningStageContent content = findContent(contentId);
         short expectedOrder = stageOrder(content.getStageCode());
@@ -134,6 +134,15 @@ public class LearningContentService {
 
         content.setTitle(requiredText("title", title, 200));
         content.setContentBody(requiredBody(contentBody));
+        if (youtubeVideoUrls != null) {
+            List<String> validatedUrls = YouTubeVideoUrls.validate(youtubeVideoUrls);
+            if (!"VIDEO_LESSONS".equals(content.getStageCode()) && !validatedUrls.isEmpty()) {
+                throw new IllegalArgumentException("YouTube videos can only be added to the Video Lessons stage.");
+            }
+            if ("VIDEO_LESSONS".equals(content.getStageCode())) {
+                content.setYoutubeVideoUrls(validatedUrls);
+            }
+        }
         content.setDisplayOrder(displayOrder);
         content.setUpdatedAt(utcNow());
         return contentRepository.save(content);

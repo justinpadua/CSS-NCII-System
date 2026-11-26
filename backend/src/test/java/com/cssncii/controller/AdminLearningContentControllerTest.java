@@ -91,7 +91,7 @@ class AdminLearningContentControllerTest {
             "Discuss fundamental concepts of computer systems servicing", "PRE_TEST", "");
         verify(courseManagementService).getDiscussionMarkdownContext(1L, 41L);
         verify(courseManagementService, never()).getDiscussionById(41L);
-        verify(learningContentService, never()).updateStageContent(anyLong(), anyString(), anyString(), anyShort());
+        verify(learningContentService, never()).updateStageContent(anyLong(), anyString(), anyString(), anyShort(), any());
         mockMvc.perform(get(URL + "/PRE_TEST/source-preview"))
             .andExpect(status().isUnauthorized());
     }
@@ -116,7 +116,7 @@ class AdminLearningContentControllerTest {
         LearningStageContent existing = stage(41L, 1, "PRE_TEST", "Pre-test", "");
         LearningStageContent updated = stage(41L, 1, "PRE_TEST", "Pre-test instructions", "Read this first.");
         when(learningContentService.getStagesForDiscussion(41L)).thenReturn(stages(41L));
-        when(learningContentService.updateStageContent(1L, "Pre-test instructions", "Read this first.", (short) 1))
+        when(learningContentService.updateStageContent(1L, "Pre-test instructions", "Read this first.", (short) 1, null))
             .thenReturn(updated);
 
         mockMvc.perform(put(URL + "/PRE_TEST").session(adminSession).with(csrf())
@@ -127,7 +127,7 @@ class AdminLearningContentControllerTest {
             .andExpect(jsonPath("$.contentBody").value("Read this first."))
             .andExpect(jsonPath("$.hasContent").value(true));
 
-        verify(learningContentService).updateStageContent(existing.getId(), "Pre-test instructions", "Read this first.", (short) 1);
+        verify(learningContentService).updateStageContent(existing.getId(), "Pre-test instructions", "Read this first.", (short) 1, null);
         verify(learningContentService, never()).createStageContent(any(), any(), any(), any(), anyShort());
     }
 
@@ -135,14 +135,53 @@ class AdminLearningContentControllerTest {
     void acceptsBodyWithTextImageAndVideoReferencesWithoutChangingStageIdentity() throws Exception {
         String markdown = "Text\n\n![Board](https://example.test/board.png)\n\n[Watch clip](https://example.test/video)";
         LearningStageContent updated = stage(41L, 5, "VIDEO_LESSONS", "Video Lessons", markdown);
+        updated.setYoutubeVideoUrls(List.of("https://youtu.be/abcdefghijk"));
         when(learningContentService.getStagesForDiscussion(41L)).thenReturn(stages(41L));
-        when(learningContentService.updateStageContent(5L, "Video Lessons", markdown, (short) 5)).thenReturn(updated);
+        when(learningContentService.updateStageContent(5L, "Video Lessons", markdown, (short) 5,
+            List.of("https://youtu.be/abcdefghijk"))).thenReturn(updated);
 
         mockMvc.perform(put(URL + "/VIDEO_LESSONS").session(adminSession).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"title\":\"Video Lessons\",\"contentBody\":\"Text\\n\\n![Board](https://example.test/board.png)\\n\\n[Watch clip](https://example.test/video)\"}"))
+                .content("{\"title\":\"Video Lessons\",\"contentBody\":\"Text\\n\\n![Board](https://example.test/board.png)\\n\\n[Watch clip](https://example.test/video)\",\"youtubeVideoUrls\":[\"https://youtu.be/abcdefghijk\"]}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.contentBody").value(markdown));
+            .andExpect(jsonPath("$.contentBody").value(markdown))
+            .andExpect(jsonPath("$.youtubeVideoUrls[0]").value("https://youtu.be/abcdefghijk"));
+    }
+
+    @Test
+    void addsMultipleVideosToACoc2VideoLessonsStage() throws Exception {
+        String coc2Url = "/api/admin/competencies/2/discussions/42/learning-stages";
+        List<String> urls = List.of("https://youtu.be/abcdefghijk", "https://www.youtube.com/shorts/ZYXWVUTSRQP");
+        LearningStageContent updated = stage(42L, 5, "VIDEO_LESSONS", "Video Lessons", "Written notes.");
+        updated.setYoutubeVideoUrls(urls);
+        when(courseManagementService.getDiscussionById(42L)).thenReturn(discussion(42L, 2L));
+        when(learningContentService.getStagesForDiscussion(42L)).thenReturn(stages(42L));
+        when(learningContentService.updateStageContent(5L, "Video Lessons", "Written notes.", (short) 5, urls))
+            .thenReturn(updated);
+
+        mockMvc.perform(put(coc2Url + "/VIDEO_LESSONS").session(adminSession).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Video Lessons\",\"contentBody\":\"Written notes.\",\"youtubeVideoUrls\":[\"https://youtu.be/abcdefghijk\",\"https://www.youtube.com/shorts/ZYXWVUTSRQP\"]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.discussionId").value(42))
+            .andExpect(jsonPath("$.youtubeVideoUrls.length()").value(2));
+    }
+
+    @Test
+    void rejectsInvalidYouTubeUrlsThroughTheAdminApi() throws Exception {
+        when(learningContentService.getStagesForDiscussion(41L)).thenReturn(stages(41L));
+        when(learningContentService.updateStageContent(5L, "Video Lessons", "Notes", (short) 5,
+            List.of("https://example.com/watch?v=abcdefghijk")))
+            .thenThrow(new IllegalArgumentException("Enter a valid HTTPS YouTube video URL."));
+
+        mockMvc.perform(put(URL + "/VIDEO_LESSONS").session(adminSession).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Video Lessons\",\"contentBody\":\"Notes\",\"youtubeVideoUrls\":[\"https://example.com/watch?v=abcdefghijk\"]}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Enter a valid HTTPS YouTube video URL."));
+
+        verify(learningContentService).updateStageContent(5L, "Video Lessons", "Notes", (short) 5,
+            List.of("https://example.com/watch?v=abcdefghijk"));
     }
 
     @Test
@@ -194,6 +233,7 @@ class AdminLearningContentControllerTest {
         item.setStageCode(code);
         item.setTitle(title);
         item.setContentBody(body);
+        item.setYoutubeVideoUrls(List.of());
         item.setDisplayOrder((short) order);
         item.setActive(true);
         item.setCreatedAt(LocalDateTime.now());

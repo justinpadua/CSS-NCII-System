@@ -82,6 +82,7 @@ CREATE TABLE learning_stage_contents (
     stage_code VARCHAR(30) NOT NULL,
     title VARCHAR(200) NOT NULL,
     content_body LONGTEXT NOT NULL,
+    youtube_video_urls LONGTEXT NULL,
     display_order TINYINT UNSIGNED NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at DATETIME(6) NOT NULL,

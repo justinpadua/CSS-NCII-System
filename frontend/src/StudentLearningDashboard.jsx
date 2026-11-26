@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { studentApiRequest } from './studentAuth.js'
 import SafeMarkdown from './SafeMarkdown.jsx'
+import YouTubeVideoPlayers from './YouTubeVideoPlayers.jsx'
 
 const stageTitles = {
   PRE_TEST: 'Pre-test', DEFINITIONS: 'Definition of Terms', EXPLANATION: 'Explanation',
@@ -261,7 +262,10 @@ export default function StudentLearningDashboard({ student, onSessionExpired, se
         {view.page === 'discussion' && selectedCompetency && selectedDiscussion && <section className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-6"><p className="text-sm font-bold uppercase tracking-wider text-teal-700">{selectedCompetency.code.replace('COC', 'COC ')} · Discussion {selectedDiscussion.displayOrder}</p><h2 className="mt-1 text-2xl font-bold">{selectedDiscussion.title}</h2>{selectedDiscussion.description && <p className="mt-2 text-slate-600">{selectedDiscussion.description}</p>}<p className="mt-3 text-sm text-slate-600">Complete each stage before moving forward. You can revisit completed stages until you start the Discussion Post-test.</p></div><div className="grid gap-3">{selectedDiscussion.stages.map(stage => stageButton(selectedDiscussion, stage))}</div></section>}
 
         {view.page === 'stage' && selectedCompetency && selectedDiscussion && selectedStage && <section className="space-y-4"><article className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-teal-700">{selectedCompetency.code.replace('COC', 'COC ')} · {selectedDiscussion.title}</p><h2 className="mt-1 text-2xl font-bold">{stageContent?.title || selectedStage.title}</h2></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(stageContent?.status || selectedStage.status)}`}>{statusLabel[stageContent?.status || selectedStage.status]}</span></div>
-          {loading ? <p className="mt-6 text-slate-600">Loading this stage…</p> : stageContent?.hasContent ? <div className="mt-6"><SafeMarkdown source={stageContent.contentBody} /></div> : <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">Learning content has not been configured for this stage yet. Please contact your instructor. The Markdown source files are kept separately and have not been published automatically.</p>}
+          {loading ? <p className="mt-6 text-slate-600">Loading this stage…</p> : stageContent?.hasContent || stageContent?.youtubeVideoIds?.length ? <div className="mt-6 space-y-5">
+            {stageContent.stageCode === 'VIDEO_LESSONS' && <YouTubeVideoPlayers videoIds={stageContent.youtubeVideoIds} />}
+            {stageContent.hasContent && <SafeMarkdown source={stageContent.contentBody} allowYoutubeVideos={stageContent.stageCode === 'VIDEO_LESSONS'} />}
+          </div> : <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">Learning content has not been configured for this stage yet. Please contact your instructor. The Markdown source files are kept separately and have not been published automatically.</p>}
         </article>
         {assessmentType[view.stageCode] && selectedStage.status !== 'COMPLETED' && attempt && !assessmentResult && <AssessmentForm title={view.stageCode === 'POST_TEST' ? 'Discussion Post-test' : stageTitles[view.stageCode]} questions={questions} answers={answers} onAnswer={saveAnswer} onSubmit={() => submitAttempt(false)} busy={assessmentBusy} />}
         {assessmentResult && <ResultCard result={assessmentResult} />}

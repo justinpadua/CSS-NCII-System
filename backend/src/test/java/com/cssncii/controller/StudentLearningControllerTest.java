@@ -57,16 +57,18 @@ class StudentLearningControllerTest {
     void learningStageJsonPreservesUnicodePunctuation() throws Exception {
         StudentPrincipal principal = new StudentPrincipal(73L, "STU-000073", "Jordan Student", "BSCS");
         String body = "# COC 1 — Lesson 1\nLESSON 1 – PRE-TEST";
-        when(learningService.openStage(73L, 1L, 41L, "PRE_TEST"))
+        when(learningService.openStage(73L, 1L, 41L, "VIDEO_LESSONS"))
             .thenReturn(new StudentLearningService.StageContent(
-                41L, "PRE_TEST", "Pre-test", "IN_PROGRESS", "Pre-test", body, true));
+                41L, "VIDEO_LESSONS", "Video Lessons", "IN_PROGRESS", "Video Lessons", body, true,
+                List.of("0zkX6nlpiSk")));
 
-        mockMvc.perform(post("/api/student/learning/competencies/1/discussions/41/stages/PRE_TEST/open")
+        mockMvc.perform(post("/api/student/learning/competencies/1/discussions/41/stages/VIDEO_LESSONS/open")
                 .with(authentication(new UsernamePasswordAuthenticationToken(
                     principal, "", List.of(new SimpleGrantedAuthority("ROLE_STUDENT")))))
                 .with(csrf()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.contentBody").value(body))
+            .andExpect(jsonPath("$.youtubeVideoIds[0]").value("0zkX6nlpiSk"))
             .andExpect(jsonPath("$.contentBody").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("â€”"))))
             .andExpect(jsonPath("$.contentBody").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("â€“"))));
     }

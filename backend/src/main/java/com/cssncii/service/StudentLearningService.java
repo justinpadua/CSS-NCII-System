@@ -96,7 +96,9 @@ public class StudentLearningService {
             .findFirst().orElse(null);
         return new StageContent(discussionId, normalizedCode, STAGE_TITLES.get(index), progress.getStatus(),
             content == null ? null : content.getTitle(), content == null ? null : content.getContentBody(),
-            content != null && content.getContentBody() != null && !content.getContentBody().isBlank());
+            content != null && content.getContentBody() != null && !content.getContentBody().isBlank(),
+            content == null || !"VIDEO_LESSONS".equals(normalizedCode) ? List.of()
+                : content.getYoutubeVideoUrls().stream().map(YouTubeVideoUrls::videoId).toList());
     }
 
     @Transactional
@@ -161,6 +163,11 @@ public class StudentLearningService {
         boolean completed, int completedStages, List<StageSummary> stages) {}
     public record StageSummary(String stageCode, String title, String status) {}
     public record StageContent(Long discussionId, String stageCode, String stageName, String status,
-        String title, String contentBody, boolean hasContent) {}
+        String title, String contentBody, boolean hasContent, List<String> youtubeVideoIds) {
+        public StageContent(Long discussionId, String stageCode, String stageName, String status,
+            String title, String contentBody, boolean hasContent) {
+            this(discussionId, stageCode, stageName, status, title, contentBody, hasContent, List.of());
+        }
+    }
     public record StageStatus(Long discussionId, String stageCode, String status, java.time.LocalDateTime completedAt) {}
 }

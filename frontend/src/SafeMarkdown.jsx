@@ -88,7 +88,8 @@ function renderTable(lines, key, imageUrlPrefix) {
   )
 }
 
-function videoEmbed(text) {
+function videoEmbed(text, allowYoutubeVideos) {
+  if (!allowYoutubeVideos) return null
   const match = text.match(/^\s*(?:[-*]\s*)?(?:Video(?:\s+link)?\s*:\s*)?(https:\/\/\S+)\s*$/i)
   if (!match) return null
   const url = safeUrl(match[1])
@@ -96,20 +97,23 @@ function videoEmbed(text) {
   let embed = null
   try {
     const parsed = new URL(url)
-    const youtubeId = parsed.hostname === 'youtu.be'
-      ? parsed.pathname.slice(1)
-      : ['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(parsed.hostname) && parsed.pathname === '/watch'
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    const youtubeId = parsed.hostname === 'youtu.be' && pathParts.length === 1
+      ? pathParts[0]
+      : ['youtube.com', 'www.youtube.com'].includes(parsed.hostname) && parsed.pathname === '/watch'
         ? parsed.searchParams.get('v')
-        : null
+        : ['youtube.com', 'www.youtube.com'].includes(parsed.hostname)
+          && pathParts.length === 2 && ['embed', 'shorts'].includes(pathParts[0])
+          ? pathParts[1]
+          : null
     if (youtubeId && /^[A-Za-z0-9_-]{11}$/.test(youtubeId)) embed = `https://www.youtube-nocookie.com/embed/${youtubeId}`
-    if (parsed.hostname === 'vimeo.com' && /^\/[0-9]+$/.test(parsed.pathname)) embed = `https://player.vimeo.com/video${parsed.pathname}`
   } catch {
     return null
   }
   return embed ? <div className="my-4 aspect-video overflow-hidden rounded-xl bg-slate-950"><iframe title="Learning video" src={embed} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen className="size-full" /></div> : null
 }
 
-export default function SafeMarkdown({ source, imageUrlPrefix }) {
+export default function SafeMarkdown({ source, imageUrlPrefix, allowYoutubeVideos = false }) {
   if (!source) return null
   const lines = source.replace(/\r/g, '').split('\n')
   const blocks = []
@@ -130,7 +134,7 @@ export default function SafeMarkdown({ source, imageUrlPrefix }) {
       index += 1
       continue
     }
-    const video = videoEmbed(line)
+    const video = videoEmbed(line, allowYoutubeVideos)
     if (video) { blocks.push(<div key={`video-${blocks.length}`}>{video}</div>); index += 1; continue }
     if (/^\s*[-*+]\s+/.test(line)) {
       const items = []

@@ -40,3 +40,4 @@ desktop.ini
 
 # Keep the application schema file
 !backend/src/main/resources/schema.sql
+!docs/add_stage5_youtube_video_urls.sql

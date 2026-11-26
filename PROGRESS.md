@@ -391,3 +391,12 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - The shared branding component retains the original three-logo row, order, sizing, and spacing across login, Admin, and Student layouts. The full `brand-logo.png` asset remains in place but is not displayed.
 - Created `frontend/public/favicon.png` as an unchanged copy of the existing system emblem at `frontend/public/icon.png`, because the requested favicon path was not present.
 - **Verification:** Frontend production build passed. Confirmed the favicon and three displayed logo assets are present in the Vite production output.
+
+## 45. Stage 5 YouTube Video Lessons (2026-11-26)
+
+- Added optional, multi-video YouTube URL management to the existing Admin Video Lessons stage editor. URLs are accepted only on `VIDEO_LESSONS` records and validated by the backend as HTTPS YouTube watch, short, embed, or Shorts links. No iframe HTML or arbitrary embed domains are accepted.
+- Added the nullable `youtube_video_urls` column to the baseline schema and an additive TiDB migration at `docs/add_stage5_youtube_video_urls.sql`, using `ADD COLUMN IF NOT EXISTS` so an existing column is skipped. Existing lesson bodies and rows are preserved; the column starts empty for existing records. The migration has not been applied to any database.
+- Student stage responses provide validated video IDs only for `VIDEO_LESSONS`. The responsive 16:9 YouTube player is rendered above that stage's written Markdown. Markdown video embeds are disabled elsewhere; video playback has no progress-completion event and existing manual completion and unlocking logic are unchanged.
+- **Backend verification:** `YouTubeVideoUrlsTest`, `LearningContentServiceTest`, `AdminLearningContentControllerTest`, and `StudentLearningControllerTest` passed (17 tests, 0 failures/errors/skips), including COC 1 and COC 2 Admin video management. Maven compiled all 97 backend source files and test sources. Tests used mocks; no database connection was made.
+- **Frontend verification:** `npm run test` passed (23 tests), `npm run lint` passed, and `npm run build` passed.
+- **Deployment requirement:** Apply the additive SQL migration before deploying the backend code. TiDB Cloud query execution and browser visual checks were not performed, so production database compatibility and live YouTube playback remain to be verified in staging.

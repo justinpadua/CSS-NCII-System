@@ -10,6 +10,7 @@ import process from 'node:process'
 
 let vite
 let SafeMarkdown
+let YouTubeVideoPlayers
 
 before(async () => {
   vite = await createServer({
@@ -21,14 +22,15 @@ before(async () => {
     server: { middlewareMode: true },
   })
   ;({ default: SafeMarkdown } = await vite.ssrLoadModule('/src/SafeMarkdown.jsx'))
+  ;({ default: YouTubeVideoPlayers } = await vite.ssrLoadModule('/src/YouTubeVideoPlayers.jsx'))
 })
 
 after(async () => {
   await vite?.close()
 })
 
-function renderedMarkdown(source, imageUrlPrefix) {
-  return renderToStaticMarkup(React.createElement(SafeMarkdown, { source, imageUrlPrefix }))
+function renderedMarkdown(source, imageUrlPrefix, allowYoutubeVideos = false) {
+  return renderToStaticMarkup(React.createElement(SafeMarkdown, { source, imageUrlPrefix, allowYoutubeVideos }))
 }
 
 function assertNoParagraphContainsFigure(html) {
@@ -80,4 +82,34 @@ test('Admin preview prefix is used only when explicitly supplied', () => {
   assert.match(adminHtml, /src="\/api\/admin\/learning-images\/fedcba9876543210fedcba9876543210\.webp"/)
   assert.doesNotMatch(studentHtml, /\/api\/admin\/learning-images\//)
   assertNoParagraphContainsFigure(studentHtml)
+})
+
+test('embeds YouTube videos only when the caller identifies Stage 5', () => {
+  const url = 'https://www.youtube.com/watch?v=abcdefghijk'
+
+  const otherStage = renderedMarkdown(url)
+  const videoLessons = renderedMarkdown(url, undefined, true)
+
+  assert.doesNotMatch(otherStage, /<iframe/)
+  assert.match(videoLessons, /src="https:\/\/www\.youtube-nocookie\.com\/embed\/abcdefghijk"/)
+  assert.match(videoLessons, /aspect-video/)
+})
+
+test('does not embed arbitrary external or Vimeo players', () => {
+  const external = renderedMarkdown('https://example.com/embed/abcdefghijk', undefined, true)
+  const vimeo = renderedMarkdown('https://vimeo.com/12345678', undefined, true)
+
+  assert.doesNotMatch(external, /<iframe/)
+  assert.doesNotMatch(vimeo, /<iframe/)
+})
+
+test('renders configured Stage 5 video ids in a responsive YouTube player', () => {
+  const html = renderToStaticMarkup(React.createElement(YouTubeVideoPlayers, {
+    videoIds: ['abcdefghijk', 'ZYXWVUTSRQP'],
+  }))
+
+  assert.equal((html.match(/<iframe/g) || []).length, 2)
+  assert.match(html, /src="https:\/\/www\.youtube\.com\/embed\/abcdefghijk"/)
+  assert.match(html, /src="https:\/\/www\.youtube\.com\/embed\/ZYXWVUTSRQP"/)
+  assert.match(html, /aspect-video/)
 })
