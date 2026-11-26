@@ -1,0 +1,31 @@
+# Git and local editor files
+.git
+.vscode/
+.idea/
+*.iml
+
+# The backend image does not contain the frontend application.
+frontend/
+
+# Build output and dependencies
+backend/target/
+**/node_modules/
+**/dist/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Local environment files may contain secrets.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+desktop.ini
