@@ -1,2 +1,125 @@
 
 @import "tailwindcss";
+
+@media (max-height: 720px) {
+  .student-dashboard-overview {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 0.75rem;
+  }
+
+  .student-dashboard-progress {
+    padding: 0.75rem;
+  }
+
+  .student-dashboard-progress-layout {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .student-dashboard-progress-ring {
+    width: 5.25rem;
+    height: 5.25rem;
+    padding: 0.375rem;
+  }
+
+  .student-dashboard-progress-ring span > span:first-child {
+    font-size: 1.5rem;
+  }
+
+  .student-dashboard-progress-copy > p:first-child {
+    font-size: 0.8rem;
+    line-height: 1.1rem;
+  }
+
+  .student-dashboard-progress-description {
+    font-size: 0.7rem;
+    line-height: 0.9rem;
+  }
+
+  .student-dashboard-welcome {
+    padding: 0.875rem;
+  }
+
+  .student-dashboard-welcome h1 {
+    margin-top: 0.25rem;
+    font-size: 1.25rem;
+    line-height: 1.6rem;
+  }
+
+  .student-dashboard-welcome p:not(:first-child) {
+    margin-top: 0.25rem;
+    line-height: 1rem;
+  }
+
+  .student-dashboard-welcome > div > div {
+    margin-top: 0.5rem;
+  }
+
+  .student-dashboard-stats {
+    padding: 0.625rem;
+  }
+
+  .student-dashboard-stats-heading {
+    margin-bottom: 0.375rem;
+  }
+}
+
+@media (max-height: 720px) and (max-width: 639px) {
+  .student-dashboard-progress-layout {
+    align-items: flex-start;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+  }
+
+  .student-dashboard-progress-ring {
+    width: 4rem;
+    height: 4rem;
+    padding: 0.3rem;
+  }
+
+  .student-dashboard-progress-ring span > span:first-child {
+    font-size: 1.125rem;
+  }
+
+  .student-dashboard-progress-copy {
+    width: 100%;
+  }
+
+  .student-dashboard-progress-copy > p:first-child {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .student-dashboard-progress-description {
+    font-size: 0.7rem;
+    line-height: 0.95rem;
+  }
+
+  .student-dashboard-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.375rem;
+  }
+
+  .student-dashboard-stat-card {
+    min-height: 4.25rem;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.25rem;
+    text-align: center;
+  }
+
+  .student-dashboard-stat-count {
+    width: 1.875rem;
+    height: 1.875rem;
+    border-width: 3px;
+    font-size: 0.8rem;
+  }
+
+  .student-dashboard-stat-label {
+    font-size: 0.62rem;
+    line-height: 0.8rem;
+  }
+}

@@ -256,10 +256,11 @@ function App() {
   if (student) {
     return (
       <SystemBrandingLayout
+        studentMode
         headerContent={(
           <div>
-            <p className="text-sm font-semibold text-teal-700">CSS NC II Learning System</p>
-            <p className="text-xs font-semibold text-slate-800 sm:text-sm">Student Learning Dashboard</p>
+            <p className="truncate text-xs font-semibold text-cyan-200 sm:text-sm">CSS NC II Learning System</p>
+            <p className="truncate text-[10px] font-semibold text-slate-200 sm:text-xs">Student Learning Dashboard</p>
           </div>
         )}
       >

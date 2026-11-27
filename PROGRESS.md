@@ -408,3 +408,15 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - Preserved the existing dashboard API, locked-stage checks, learning screens, assessment and activity components, Stage 5 YouTube display, and session/logout logic. No certificate panel was added because certificate support is not present.
 - Added focused unit tests for the dashboard progress and stage-count aggregation.
 - **Frontend verification:** `npm run test` passed (26 tests), `npm run lint` passed, and `npm run build` passed. No authenticated browser run against a live backend was performed; desktop/tablet/mobile behavior still needs visual review in a running app.
+
+## 47. Student Dashboard Viewport Fitment (2026-11-27)
+
+- Corrected the student wrapper height chain: the authenticated Student layout now fills the dynamic viewport, removes the shared bottom padding, and keeps the institutional logo header and `Developed by JL` footer on the dark theme. Logo files and sizing are unchanged. Admin and login wrapper variants are unchanged.
+- The student workspace and home dashboard use bounded flex containers. The sidebar navigation and competency-card region are the two independent scroll areas on the Dashboard page; the profile, logout action, summary cards, and header stay in place. The outer document is clipped to the viewport to prevent browser-level scrolling. Other learning and assessment views retain an internal content scroller so their full content stays accessible.
+- **Verification:** Frontend tests passed (26), ESLint passed, Vite production build passed, and `git diff --check` passed. The local frontend opened to the sign-in screen; an authenticated dashboard was unavailable for viewport screenshots and direct scroll-isolation checks. Desktop, laptop, tablet, and mobile visual behavior still needs confirmation with a local Student session.
+
+## 48. Short Mobile Dashboard Fitment (2026-11-27)
+
+- Corrected the short-height mobile progress panel so screens at or below 639px wide stack the progress ring above its explanatory copy. The ring is smaller at this breakpoint, while the explanation remains full-width and readable. Shorter wider screens retain the existing side-by-side layout.
+- Kept the fixed dashboard shell and independent sidebar and competency scroll areas unchanged. No student behavior, logos, or footer branding changed.
+- Added responsive CSS checks for narrow short screens, wider short screens, and taller mobile screens. **Verification:** all 29 frontend tests passed, ESLint passed, the production build passed, and `git diff --check` passed.
