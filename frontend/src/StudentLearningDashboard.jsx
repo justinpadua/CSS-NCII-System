@@ -349,7 +349,66 @@ export default function StudentLearningDashboard({ student, onSessionExpired, se
 }
 
 function AssessmentForm({ title, questions, answers, onAnswer, onSubmit, busy }) {
-  return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-7"><div className="flex items-center justify-between gap-3"><h3 className="text-lg font-bold">{title}</h3><span className="text-sm text-slate-500">{questions.length} questions</span></div>{questions.map((question, index) => <fieldset key={question.questionId} className="rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold text-slate-900">{index + 1}. {question.questionText}</legend><div className="mt-3 space-y-2">{question.questionType === 'MULTIPLE_SELECT' ? question.choices.map(choice => { const selected = answers[question.questionId]?.choiceIds || []; return <label key={choice.choiceId} className="flex cursor-pointer items-start gap-3 rounded-lg p-2 hover:bg-slate-50"><input type="checkbox" checked={selected.includes(choice.choiceId)} onChange={event => onAnswer(question, { choiceIds: event.target.checked ? [...selected, choice.choiceId] : selected.filter(id => id !== choice.choiceId) })} className="mt-1 accent-teal-800" /><span>{choice.choiceText}</span></label> }) : question.questionType === 'TRUE_FALSE' ? [true, false].map(value => <label key={String(value)} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50"><input type="radio" name={`q-${question.questionId}`} checked={answers[question.questionId]?.value === value} onChange={() => onAnswer(question, { value })} className="accent-teal-800" /><span>{value ? 'True' : 'False'}</span></label>) : question.choices.map(choice => <label key={choice.choiceId} className="flex cursor-pointer items-start gap-3 rounded-lg p-2 hover:bg-slate-50"><input type="radio" name={`q-${question.questionId}`} checked={answers[question.questionId]?.choiceId === choice.choiceId} onChange={() => onAnswer(question, { choiceId: choice.choiceId })} className="mt-1 accent-teal-800" /><span>{choice.choiceText}</span></label>)}</div></fieldset>)}<button type="button" onClick={onSubmit} disabled={busy || !questions.length} className="rounded-lg bg-teal-800 px-5 py-2.5 font-semibold text-white hover:bg-teal-900 disabled:opacity-50">{busy ? 'Submitting…' : 'Submit assessment'}</button></section>
+  return (
+    <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 sm:p-7">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-lg font-bold">{title}</h3>
+        <span className="text-sm text-slate-500">{questions.length} questions</span>
+      </div>
+      {questions.map((question, index) => (
+        <fieldset key={question.questionId} className="rounded-xl border border-slate-200 p-4">
+          <legend className="px-1 font-semibold text-slate-900">{index + 1}. {question.questionText}</legend>
+          <div className="mt-3 space-y-2">
+            {question.questionType === 'MULTIPLE_SELECT'
+              ? question.choices.map(choice => {
+                const selected = answers[question.questionId]?.choiceIds || []
+                return (
+                  <label key={choice.choiceId} className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-slate-900 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(choice.choiceId)}
+                      onChange={event => onAnswer(question, {
+                        choiceIds: event.target.checked ? [...selected, choice.choiceId] : selected.filter(id => id !== choice.choiceId),
+                      })}
+                      className="mt-1 accent-teal-800"
+                    />
+                    <span>{choice.choiceText}</span>
+                  </label>
+                )
+              })
+              : question.questionType === 'TRUE_FALSE'
+                ? [true, false].map(value => (
+                  <label key={String(value)} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 text-slate-900 hover:bg-slate-50">
+                    <input
+                      type="radio"
+                      name={`q-${question.questionId}`}
+                      checked={answers[question.questionId]?.value === value}
+                      onChange={() => onAnswer(question, { value })}
+                      className="accent-teal-800"
+                    />
+                    <span>{value ? 'True' : 'False'}</span>
+                  </label>
+                ))
+                : question.choices.map(choice => (
+                  <label key={choice.choiceId} className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-slate-900 hover:bg-slate-50">
+                    <input
+                      type="radio"
+                      name={`q-${question.questionId}`}
+                      checked={answers[question.questionId]?.choiceId === choice.choiceId}
+                      onChange={() => onAnswer(question, { choiceId: choice.choiceId })}
+                      className="mt-1 accent-teal-800"
+                    />
+                    <span>{choice.choiceText}</span>
+                  </label>
+                ))}
+          </div>
+        </fieldset>
+      ))}
+      <button type="button" onClick={onSubmit} disabled={busy || !questions.length} className="rounded-lg bg-teal-800 px-5 py-2.5 font-semibold text-white hover:bg-teal-900 disabled:opacity-50">
+        {busy ? 'Submitting…' : 'Submit assessment'}
+      </button>
+    </section>
+  )
 }
 
 function ResultCard({ result }) {
