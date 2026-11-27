@@ -257,22 +257,13 @@ function App() {
     return (
       <SystemBrandingLayout
         headerContent={(
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="min-w-36 flex-1">
-              <p className="text-sm font-semibold text-teal-700">CSS NC II Learning System</p>
-              <p className="text-xs font-semibold text-slate-800 sm:text-sm">Student Learning Dashboard</p>
-            </div>
-            <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
-              <span className="min-w-0 text-right text-xs leading-4 text-slate-600 sm:text-sm">
-                <span className="block truncate sm:max-w-56">{student.fullName}</span>
-                <span className="block text-slate-500">{student.accountId}</span>
-              </span>
-              <button type="button" onClick={handleStudentLogout} disabled={busy} className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-sky-950 hover:bg-slate-50 disabled:opacity-60 sm:text-sm">{busy ? 'Logging out…' : 'Log out'}</button>
-            </div>
+          <div>
+            <p className="text-sm font-semibold text-teal-700">CSS NC II Learning System</p>
+            <p className="text-xs font-semibold text-slate-800 sm:text-sm">Student Learning Dashboard</p>
           </div>
         )}
       >
-        <StudentLearningDashboard student={student} onSessionExpired={handleStudentSessionExpired} sessionError={sessionCheckError} />
+        <StudentLearningDashboard student={student} onSessionExpired={handleStudentSessionExpired} sessionError={sessionCheckError} onLogout={handleStudentLogout} logoutBusy={busy} />
       </SystemBrandingLayout>
     )
   }

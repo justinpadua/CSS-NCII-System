@@ -400,3 +400,11 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - **Backend verification:** `YouTubeVideoUrlsTest`, `LearningContentServiceTest`, `AdminLearningContentControllerTest`, and `StudentLearningControllerTest` passed (17 tests, 0 failures/errors/skips), including COC 1 and COC 2 Admin video management. Maven compiled all 97 backend source files and test sources. Tests used mocks; no database connection was made.
 - **Frontend verification:** `npm run test` passed (23 tests), `npm run lint` passed, and `npm run build` passed.
 - **Deployment requirement:** Apply the additive SQL migration before deploying the backend code. TiDB Cloud query execution and browser visual checks were not performed, so production database compatibility and live YouTube playback remain to be verified in staging.
+
+## 46. Student Dashboard UI Redesign (2026-11-27)
+
+- Redesigned the Student learning area with a dark navy/teal background, subtle technical grid, translucent cards, responsive circular progress indicator, and summary cards. Added a collapsible course sidebar for the backend-provided COC 1/COC 2, Discussion names, and existing stage statuses; mobile uses a slide-in navigation drawer. The existing Student logout handler now appears at the bottom of the sidebar.
+- Overall progress is aggregated from the existing `discussionCount` and `completedDiscussions` values for active COC 1 and COC 2 competencies. The assessment counters use existing per-Discussion stage statuses; Activity is labeled as submitted. No statistics endpoint, backend behavior, schema, assessment, or progress calculation changed.
+- Preserved the existing dashboard API, locked-stage checks, learning screens, assessment and activity components, Stage 5 YouTube display, and session/logout logic. No certificate panel was added because certificate support is not present.
+- Added focused unit tests for the dashboard progress and stage-count aggregation.
+- **Frontend verification:** `npm run test` passed (26 tests), `npm run lint` passed, and `npm run build` passed. No authenticated browser run against a live backend was performed; desktop/tablet/mobile behavior still needs visual review in a running app.
