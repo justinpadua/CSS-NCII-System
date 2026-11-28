@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.cssncii.entity.Admin;
+import com.cssncii.entity.AnswerChoice;
 import com.cssncii.entity.Assessment;
 import com.cssncii.entity.AssessmentAttempt;
 import com.cssncii.entity.Competency;
@@ -156,6 +157,56 @@ class GeneralizedPostTestServiceTest {
         verify(attemptRepository).save(captor.capture());
         assertEquals("IN_PROGRESS", captor.getValue().getStatus());
         assertNotNull(captor.getValue().getStartedAt());
+    }
+
+    @Test
+    void generalizedPromptsSupportNewTypesWithoutExposingAnswerKeys() throws Exception {
+        when(studentRepository.findById(8L)).thenReturn(Optional.of(student));
+        AssessmentAttempt inProgress = new AssessmentAttempt();
+        inProgress.setId(101L);
+        inProgress.setStudent(student);
+        inProgress.setAssessment(assessment);
+        inProgress.setStatus("IN_PROGRESS");
+        when(attemptRepository.findById(101L)).thenReturn(Optional.of(inProgress));
+
+        var matching = configuredQuestion(202L, "MATCHING_TYPE",
+            "{\"matches\":[{\"promptIndex\":0,\"choiceId\":9999}]}",
+            "{\"matchingPrompts\":[\"Matching prompt\"]}");
+        var enumeration = configuredQuestion(203L, "ENUMERATION",
+            "{\"acceptedAnswers\":[\"ENUMERATION-SECRET\"]}",
+            "{\"requiredAnswerCount\":1,\"ordered\":false}");
+        when(questionRepository.findByAssessment_IdOrderByDisplayOrderAsc(22L))
+            .thenReturn(List.of(matching, enumeration));
+        AnswerChoice option = new AnswerChoice();
+        option.setId(31L);
+        option.setChoiceText("Matching option");
+        option.setDisplayOrder(1);
+        when(choiceRepository.findByQuestion_IdOrderByDisplayOrderAsc(202L)).thenReturn(List.of(option));
+        when(choiceRepository.findByQuestion_IdOrderByDisplayOrderAsc(203L)).thenReturn(List.of());
+
+        var prompts = service.getQuestionsForAttempt(8L, 101L);
+        var serialized = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(prompts);
+
+        assertEquals(List.of("MATCHING_TYPE", "ENUMERATION"),
+            prompts.stream().map(AssessmentAttemptService.QuestionPrompt::questionType).toList());
+        assertEquals(List.of("Matching prompt"), prompts.get(0).matchingPrompts());
+        assertTrue(prompts.get(1).questionConfig().contains("requiredAnswerCount"));
+        assertFalse(serialized.contains("correctAnswerData"));
+        assertFalse(serialized.contains("ENUMERATION-SECRET"));
+        assertFalse(serialized.contains("9999"));
+    }
+
+    private com.cssncii.entity.Question configuredQuestion(Long id, String type, String key, String config) {
+        var question = new com.cssncii.entity.Question();
+        question.setId(id);
+        question.setAssessment(assessment);
+        question.setQuestionType(type);
+        question.setQuestionText(type + " prompt");
+        question.setCorrectAnswerData(key);
+        question.setQuestionConfig(config);
+        question.setPoints(BigDecimal.ONE);
+        question.setDisplayOrder(id);
+        return question;
     }
 
     @Test

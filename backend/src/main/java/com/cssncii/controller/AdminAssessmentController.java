@@ -7,6 +7,7 @@ import com.cssncii.dto.AssessmentManagementDtos.AssessmentUpdateRequest;
 import com.cssncii.dto.AssessmentManagementDtos.ChoiceRequest;
 import com.cssncii.dto.AssessmentManagementDtos.ChoiceResponse;
 import com.cssncii.dto.AssessmentManagementDtos.QuestionCreateRequest;
+import com.cssncii.dto.AssessmentManagementDtos.QuestionConfigInput;
 import com.cssncii.dto.AssessmentManagementDtos.QuestionResponse;
 import com.cssncii.dto.AssessmentManagementDtos.QuestionUpdateRequest;
 import com.cssncii.entity.AnswerChoice;
@@ -109,12 +110,19 @@ public class AdminAssessmentController {
     public ResponseEntity<QuestionResponse> createQuestion(
         @PathVariable Long assessmentId, @Valid @RequestBody QuestionCreateRequest request
     ) {
-        List<AssessmentManagementService.ChoiceDefinition> choices = request.choices().stream()
-            .map(input -> new AssessmentManagementService.ChoiceDefinition(input.choiceText(), input.displayOrder()))
-            .toList();
-        AssessmentManagementService.ConfiguredQuestion configured = assessmentService.createQuestionWithChoices(
-            assessmentId, request.questionType(), request.questionText(), request.points(), request.displayOrder(),
-            choices, request.correctChoiceIndexes(), request.correctValue());
+        String type = request.questionType().trim().toUpperCase(java.util.Locale.ROOT);
+        List<AssessmentManagementService.ChoiceDefinition> choices = "MATCHING_TYPE".equals(type)
+            ? matchingChoiceDefinitions(request.questionConfig())
+            : request.choices().stream()
+                .map(input -> new AssessmentManagementService.ChoiceDefinition(input.choiceText(), input.displayOrder()))
+                .toList();
+        AssessmentManagementService.ConfiguredQuestion configured = Set.of("MATCHING_TYPE", "ENUMERATION")
+            .contains(type)
+            ? assessmentService.createQuestionWithChoices(assessmentId, request.questionType(), request.questionText(),
+                request.points(), request.displayOrder(), choices, request.correctChoiceIndexes(), request.correctValue(),
+                request.questionConfig())
+            : assessmentService.createQuestionWithChoices(assessmentId, request.questionType(), request.questionText(),
+                request.points(), request.displayOrder(), choices, request.correctChoiceIndexes(), request.correctValue());
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(questionResponse(configured.question(), configured.choices()));
     }
@@ -128,6 +136,21 @@ public class AdminAssessmentController {
         requireQuestionInAssessment(assessmentId, existing);
         List<AnswerChoice> choices = assessmentService.getAnswerChoicesByQuestion(questionId);
         String type = request.questionType().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!existing.getQuestionType().equals(type)) {
+            throw new IllegalArgumentException("Question type cannot be changed after creation.");
+        }
+        if ("MATCHING_TYPE".equals(type)) {
+            Question updated = assessmentService.updateMatchingQuestionConfiguration(questionId, request.questionText(),
+                request.points(), request.displayOrder(), request.questionConfig());
+            return questionResponse(updated);
+        }
+        if ("ENUMERATION".equals(type)) {
+            String key = newQuestionAnswerData(type, request.questionConfig(), choices);
+            String config = questionConfigData(type, request.questionConfig());
+            Question updated = assessmentService.updateQuestionConfiguration(questionId, request.questionText(),
+                request.points(), request.displayOrder(), request.questionConfig(), key, config);
+            return questionResponse(updated, choices);
+        }
         String answerData = answerData(type, request.correctChoiceIds(), request.correctValue(), choices);
         Question updated = assessmentService.updateQuestion(questionId, type, request.questionText(), answerData,
             request.points(), request.displayOrder());
@@ -239,6 +262,68 @@ public class AdminAssessmentController {
         return "{\"choiceIds\":[" + String.join(",", correctIds.stream().map(String::valueOf).toList()) + "]}";
     }
 
+    private List<AssessmentManagementService.ChoiceDefinition> matchingChoiceDefinitions(QuestionConfigInput config) {
+        if (config == null || config.matchingPairs() == null) return List.of();
+        List<AssessmentManagementService.ChoiceDefinition> definitions = new java.util.ArrayList<>();
+        java.util.LinkedHashSet<String> options = new java.util.LinkedHashSet<>();
+        for (var pair : config.matchingPairs()) {
+            String answer = pair.answerText().trim();
+            if (options.add(answer.toLowerCase(java.util.Locale.ROOT))) {
+                definitions.add(new AssessmentManagementService.ChoiceDefinition(answer, definitions.size() + 1));
+            }
+        }
+        if (config.distractors() != null) {
+            for (String option : config.distractors()) {
+                String value = option.trim();
+                if (options.add(value.toLowerCase(java.util.Locale.ROOT))) {
+                    definitions.add(new AssessmentManagementService.ChoiceDefinition(value, definitions.size() + 1));
+                }
+            }
+        }
+        return definitions;
+    }
+
+    private String newQuestionAnswerData(String type, QuestionConfigInput config, List<AnswerChoice> choices) {
+        if (config == null) throw new IllegalArgumentException("Question type configuration is required.");
+        if ("ENUMERATION".equals(type)) {
+            if (config.acceptedAnswers() == null) throw new IllegalArgumentException("Accepted answers are required.");
+            return json(java.util.Map.of("acceptedAnswers", config.acceptedAnswers()));
+        }
+        if (!"MATCHING_TYPE".equals(type) || config.matchingPairs() == null) {
+            throw new IllegalArgumentException("Matching pairs are required.");
+        }
+        List<java.util.Map<String, Object>> matches = new java.util.ArrayList<>();
+        for (int i = 0; i < config.matchingPairs().size(); i++) {
+            String text = config.matchingPairs().get(i).answerText().trim();
+            AnswerChoice choice = choices.stream().filter(item -> normalizeAnswer(item.getChoiceText()).equals(normalizeAnswer(text)))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Matching answer must exist in the shared options."));
+            matches.add(java.util.Map.of("promptIndex", i, "choiceId", choice.getId()));
+        }
+        return json(java.util.Map.of("matches", matches));
+    }
+
+    private String questionConfigData(String type, QuestionConfigInput config) {
+        if ("MATCHING_TYPE".equals(type)) {
+            return json(java.util.Map.of("matchingPrompts", config.matchingPairs().stream()
+                .map(pair -> pair.prompt().trim()).toList()));
+        }
+        if ("ENUMERATION".equals(type)) {
+            return json(java.util.Map.of("requiredAnswerCount", config.requiredAnswerCount(), "ordered", config.ordered()));
+        }
+        return "{}";
+    }
+
+    private String json(Object value) {
+        try { return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(value); }
+        catch (tools.jackson.core.JacksonException exception) {
+            throw new IllegalArgumentException("Question configuration is invalid.", exception);
+        }
+    }
+
+    private String normalizeAnswer(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
+    }
+
     private AssessmentResponse assessmentResponse(Assessment assessment) {
         return new AssessmentResponse(assessment.getId(),
             assessment.getDiscussion() == null ? null : assessment.getDiscussion().getId(),
@@ -256,13 +341,28 @@ public class AdminAssessmentController {
         if (data == null) throw new IllegalStateException("Stored question answer configuration is invalid.");
         List<Long> correctIds = List.of();
         Boolean correctValue = null;
+        if ("ENUMERATION".equals(question.getQuestionType())) {
+            return new QuestionResponse(question.getId(), question.getAssessment().getId(), question.getQuestionType(),
+                question.getQuestionText(), question.getPoints(), question.getDisplayOrder(), List.of(), null,
+                choices.stream().map(choice -> choiceResponse(choice, false)).toList(),
+                question.getQuestionConfig(), adminQuestionConfiguration(question, choices));
+        }
+        if ("MATCHING_TYPE".equals(question.getQuestionType())) {
+            java.util.regex.Matcher matching = java.util.regex.Pattern
+                .compile("\\\"choiceId\\\"\\s*:\\s*([0-9]+)").matcher(data);
+            List<Long> matches = new java.util.ArrayList<>();
+            while (matching.find()) matches.add(Long.parseLong(matching.group(1)));
+            correctIds = List.copyOf(matches);
+        }
         java.util.regex.Matcher oneChoice = java.util.regex.Pattern
             .compile("\\\"choiceId\\\"\\s*:\\s*([0-9]+)").matcher(data);
         java.util.regex.Matcher manyChoices = java.util.regex.Pattern
             .compile("\\\"choiceIds\\\"\\s*:\\s*\\[([0-9,\\s]+)]").matcher(data);
         java.util.regex.Matcher bool = java.util.regex.Pattern
             .compile("\\\"value\\\"\\s*:\\s*(true|false)").matcher(data);
-        if (oneChoice.find()) {
+        if ("MATCHING_TYPE".equals(question.getQuestionType())) {
+            // Matching correctness is represented by the per-prompt choice IDs above.
+        } else if (oneChoice.find()) {
             correctIds = List.of(Long.parseLong(oneChoice.group(1)));
         } else if (manyChoices.find()) {
             correctIds = java.util.Arrays.stream(manyChoices.group(1).split(","))
@@ -275,7 +375,50 @@ public class AdminAssessmentController {
         List<Long> selectedCorrectIds = correctIds;
         return new QuestionResponse(question.getId(), question.getAssessment().getId(), question.getQuestionType(),
             question.getQuestionText(), question.getPoints(), question.getDisplayOrder(), correctIds, correctValue,
-            choices.stream().map(choice -> choiceResponse(choice, selectedCorrectIds.contains(choice.getId()))).toList());
+            choices.stream().map(choice -> choiceResponse(choice, selectedCorrectIds.contains(choice.getId()))).toList(),
+            question.getQuestionConfig(), Set.of("MATCHING_TYPE").contains(question.getQuestionType())
+                ? adminQuestionConfiguration(question, choices) : null);
+    }
+
+    private String adminQuestionConfiguration(Question question, List<AnswerChoice> choices) {
+        try {
+            var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+            var key = mapper.readTree(question.getCorrectAnswerData());
+            var config = question.getQuestionConfig() == null ? mapper.createObjectNode()
+                : mapper.readTree(question.getQuestionConfig());
+            if ("ENUMERATION".equals(question.getQuestionType())) {
+                java.util.Map<String, Object> value = new java.util.LinkedHashMap<>();
+                value.put("acceptedAnswers", mapper.treeToValue(key.get("acceptedAnswers"), List.class));
+                value.put("requiredAnswerCount", config.get("requiredAnswerCount").intValue());
+                value.put("ordered", config.get("ordered").booleanValue());
+                return mapper.writeValueAsString(value);
+            }
+            var prompts = config.get("matchingPrompts");
+            var matches = key.get("matches");
+            if (prompts == null || !prompts.isArray() || matches == null || !matches.isArray()) {
+                throw new IllegalStateException("Stored matching configuration is invalid.");
+            }
+            java.util.Map<Long, String> choiceText = choices.stream().collect(java.util.stream.Collectors.toMap(
+                AnswerChoice::getId, AnswerChoice::getChoiceText));
+            List<java.util.Map<String, String>> pairs = new java.util.ArrayList<>();
+            java.util.Set<Long> correctIds = new java.util.HashSet<>();
+            for (var match : matches) {
+                long id = match.get("choiceId").longValue();
+                int index = match.get("promptIndex").intValue();
+                if (index < 0 || index >= prompts.size() || !choiceText.containsKey(id)) {
+                    throw new IllegalStateException("Stored matching answer map is invalid.");
+                }
+                pairs.add(java.util.Map.of("prompt", prompts.get(index).textValue(), "answerText", choiceText.get(id)));
+                correctIds.add(id);
+            }
+            java.util.Map<String, Object> value = new java.util.LinkedHashMap<>();
+            value.put("matchingPairs", pairs);
+            value.put("distractors", choices.stream().filter(choice -> !correctIds.contains(choice.getId()))
+                .map(AnswerChoice::getChoiceText).toList());
+            return mapper.writeValueAsString(value);
+        } catch (tools.jackson.core.JacksonException exception) {
+            throw new IllegalStateException("Stored question configuration is invalid.", exception);
+        }
     }
 
     private boolean isChoiceCorrect(AnswerChoice choice) {

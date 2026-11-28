@@ -2,6 +2,7 @@ package com.cssncii.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -10,6 +11,9 @@ import com.cssncii.entity.Assessment;
 import com.cssncii.entity.Competency;
 import com.cssncii.entity.Discussion;
 import com.cssncii.entity.Question;
+import com.cssncii.dto.AssessmentManagementDtos.MatchingPairInput;
+import com.cssncii.dto.AssessmentManagementDtos.MatchingOptionInput;
+import com.cssncii.dto.AssessmentManagementDtos.QuestionConfigInput;
 import com.cssncii.repository.AnswerChoiceRepository;
 import com.cssncii.repository.AssessmentAttemptRepository;
 import com.cssncii.repository.AssessmentRepository;
@@ -22,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -61,6 +66,11 @@ class AssessmentManagementServiceTest {
             if (!savedChoices.contains(choice)) savedChoices.add(choice);
             return choice;
         });
+        doAnswer(call -> {
+            Iterable<AnswerChoice> removed = call.getArgument(0);
+            removed.forEach(savedChoices::remove);
+            return null;
+        }).when(choiceRepository).deleteAll(any(Iterable.class));
         service = new AssessmentManagementService(
             assessmentRepository, questionRepository, choiceRepository,
             discussionRepository, competencyRepository, attemptAnswerRepository,
@@ -85,6 +95,177 @@ class AssessmentManagementServiceTest {
 
         assertEquals(false, created.isActive());
         verify(assessmentRepository).save(argThat(value -> !value.isActive()));
+    }
+
+    @Test
+    void legacyQuestionCreationRejectsTypesThatRequireConfiguration() {
+        for (String type : List.of("MATCHING_TYPE", "ENUMERATION")) {
+            assertThrows(IllegalArgumentException.class, () -> service.createQuestion(
+                8L, type, "Prompt", "{}", BigDecimal.ONE, 1));
+        }
+        verify(questionRepository, never()).save(any(Question.class));
+    }
+
+    @Test
+    void generalizedPostTestCanBeCreatedForCoc1AndCoc2Competencies() {
+        for (long competencyId : List.of(2L, 3L)) {
+            Competency competency = new Competency();
+            competency.setId(competencyId);
+            competency.setCode(competencyId == 2L ? "COC1" : "COC2");
+            when(competencyRepository.findById(competencyId)).thenReturn(Optional.of(competency));
+            when(assessmentRepository.findByCompetency_IdAndAssessmentType(competencyId, "GENERALIZED_POST_TEST"))
+                .thenReturn(Optional.empty());
+        }
+        when(assessmentRepository.save(any(Assessment.class))).thenAnswer(call -> call.getArgument(0));
+
+        Assessment coc1Assessment = service.createAssessment("GENERALIZED_POST_TEST", null, 2L,
+            "COC 1 Generalized Post-test", null, false);
+        Assessment coc2Assessment = service.createAssessment("GENERALIZED_POST_TEST", null, 3L,
+            "COC 2 Generalized Post-test", null, false);
+
+        assertEquals("COC1", coc1Assessment.getCompetency().getCode());
+        assertEquals("COC2", coc2Assessment.getCompetency().getCode());
+    }
+
+    @Test
+    void createsMatchingPairsAndStoresPromptsSeparatelyFromCorrectMappings() {
+        QuestionConfigInput config = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor"), new MatchingPairInput("RAM", "Memory")),
+            List.of("Storage"));
+        var created = service.createQuestionWithChoices(8L, "MATCHING_TYPE", "Match each item.",
+            new BigDecimal("5.00"), 1,
+            List.of(new AssessmentManagementService.ChoiceDefinition("Processor", 1),
+                new AssessmentManagementService.ChoiceDefinition("Memory", 2),
+                new AssessmentManagementService.ChoiceDefinition("Storage", 3)), List.of(), null, config);
+
+        assertEquals("{\"matchingPrompts\":[\"CPU\",\"RAM\"]}", created.question().getQuestionConfig());
+        assertTrue(created.question().getCorrectAnswerData().contains("\"matches\""));
+        assertTrue(created.question().getCorrectAnswerData().contains("\"choiceId\":30"));
+        assertEquals(3, created.choices().size());
+    }
+
+    @Test
+    void updatesMatchingPromptsOptionsMappingsAndSupportsDifferentOptionAndPairCounts() {
+        QuestionConfigInput original = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor"), new MatchingPairInput("RAM", "Memory")),
+            List.of("Storage"));
+        Question question = service.createQuestionWithChoices(8L, "MATCHING_TYPE", "Match each item.",
+            new BigDecimal("5.00"), 1,
+            List.of(new AssessmentManagementService.ChoiceDefinition("Processor", 1),
+                new AssessmentManagementService.ChoiceDefinition("Memory", 2),
+                new AssessmentManagementService.ChoiceDefinition("Storage", 3)), List.of(), null, original).question();
+
+        QuestionConfigInput edited = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU core", "Central Processor"),
+                new MatchingPairInput("RAM", "Memory"),
+                new MatchingPairInput("Disk", "Storage")),
+            List.of("Spare"), List.of(new MatchingOptionInput(30L, "Central Processor"),
+                new MatchingOptionInput(31L, "Memory"), new MatchingOptionInput(32L, "Storage"),
+                new MatchingOptionInput(null, "Spare")));
+        Question updated = service.updateMatchingQuestionConfiguration(question.getId(), "Match updated items.",
+            new BigDecimal("5.00"), 1, edited);
+
+        assertEquals("{\"matchingPrompts\":[\"CPU core\",\"RAM\",\"Disk\"]}", updated.getQuestionConfig());
+        assertTrue(updated.getCorrectAnswerData().contains("\"choiceId\":30"));
+        assertTrue(updated.getCorrectAnswerData().contains("\"choiceId\":31"));
+        assertTrue(updated.getCorrectAnswerData().contains("\"choiceId\":32"));
+        assertEquals(List.of("Central Processor", "Memory", "Storage", "Spare"),
+            savedChoices.stream().map(AnswerChoice::getChoiceText).toList());
+
+        QuestionConfigInput reduced = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU core", "Central Processor"),
+                new MatchingPairInput("Disk", "Storage")), List.of(),
+            List.of(new MatchingOptionInput(30L, "Central Processor"),
+                new MatchingOptionInput(32L, "Storage")));
+        Question reducedQuestion = service.updateMatchingQuestionConfiguration(question.getId(), "Match two items.",
+            new BigDecimal("5.00"), 1, reduced);
+        assertEquals("{\"matchingPrompts\":[\"CPU core\",\"Disk\"]}", reducedQuestion.getQuestionConfig());
+        verify(choiceRepository).deleteAll(argThat((Iterable<AnswerChoice> removed) ->
+            java.util.stream.StreamSupport.stream(removed.spliterator(), false)
+                .map(AnswerChoice::getId).collect(java.util.stream.Collectors.toSet()).equals(Set.of(31L, 33L))));
+
+        AssessmentAttemptService grading = new AssessmentAttemptService(mock(com.cssncii.repository.StudentRepository.class),
+            assessmentRepository, assessmentAttemptRepository, attemptAnswerRepository, questionRepository, choiceRepository,
+            mock(com.cssncii.repository.StudentStageProgressRepository.class), mock(StudentProgressService.class));
+        var partial = grading.scoreResponse(reducedQuestion,
+            "{\"matches\":[{\"promptIndex\":0,\"choiceId\":30},{\"promptIndex\":1,\"choiceId\":null}]}",
+            savedChoices);
+        assertEquals(new BigDecimal("2.50"), partial.awardedPoints());
+    }
+
+    @Test
+    void matchingUpdatesRejectMissingMappingsDuplicatePromptsAndForeignOptionIds() {
+        QuestionConfigInput original = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor")), List.of("Storage"));
+        Question question = service.createQuestionWithChoices(8L, "MATCHING_TYPE", "Match.", BigDecimal.ONE, 1,
+            List.of(new AssessmentManagementService.ChoiceDefinition("Processor", 1),
+                new AssessmentManagementService.ChoiceDefinition("Storage", 2)), List.of(), null, original).question();
+
+        QuestionConfigInput missingOption = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Missing")), List.of(),
+            List.of(new MatchingOptionInput(30L, "Processor")));
+        assertThrows(IllegalArgumentException.class, () -> service.updateMatchingQuestionConfiguration(
+            question.getId(), "Match.", BigDecimal.ONE, 1, missingOption));
+
+        QuestionConfigInput duplicatePrompt = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor"), new MatchingPairInput(" cpu ", "Storage")),
+            List.of(), List.of(new MatchingOptionInput(30L, "Processor"), new MatchingOptionInput(31L, "Storage")));
+        assertThrows(IllegalArgumentException.class, () -> service.updateMatchingQuestionConfiguration(
+            question.getId(), "Match.", BigDecimal.ONE, 1, duplicatePrompt));
+
+        QuestionConfigInput foreignChoice = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor")), List.of(),
+            List.of(new MatchingOptionInput(999L, "Processor")));
+        assertThrows(IllegalArgumentException.class, () -> service.updateMatchingQuestionConfiguration(
+            question.getId(), "Match.", BigDecimal.ONE, 1, foreignChoice));
+    }
+
+    @Test
+    void matchingUpdatePreservesExistingAttemptProtectionBeforeChangingOptions() {
+        QuestionConfigInput original = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor")), List.of("Storage"));
+        Question question = service.createQuestionWithChoices(8L, "MATCHING_TYPE", "Match.", BigDecimal.ONE, 1,
+            List.of(new AssessmentManagementService.ChoiceDefinition("Processor", 1),
+                new AssessmentManagementService.ChoiceDefinition("Storage", 2)), List.of(), null, original).question();
+        QuestionConfigInput revised = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Core")), List.of("Storage"),
+            List.of(new MatchingOptionInput(30L, "Core"), new MatchingOptionInput(31L, "Storage")));
+        when(assessmentAttemptRepository.existsByAssessment_Id(8L)).thenReturn(true);
+
+        assertThrows(IllegalStateException.class, () -> service.updateMatchingQuestionConfiguration(
+            question.getId(), "Should not save", BigDecimal.ONE, 1, revised));
+        assertEquals("Processor", savedChoices.getFirst().getChoiceText());
+        assertTrue(question.getCorrectAnswerData().contains("\"choiceId\":30"));
+    }
+
+    @Test
+    void rejectsNewQuestionTypesForActivities() {
+        assessment.setAssessmentType("ACTIVITY");
+        QuestionConfigInput config = new QuestionConfigInput(List.of("CPU"), 1, false, null, null);
+        assertThrows(IllegalArgumentException.class, () -> service.createQuestionWithChoices(8L, "ENUMERATION",
+            "Name CPU", BigDecimal.ONE, 1, List.of(), List.of(), null, config));
+        verify(questionRepository, never()).save(any(Question.class));
+    }
+
+    @Test
+    void updatesNewQuestionConfigurationBeforeAttemptsAndProtectsItAfterAttemptsExist() {
+        QuestionConfigInput original = new QuestionConfigInput(List.of("CPU"), 1, false, null, null);
+        Question question = service.createQuestionWithChoices(8L, "ENUMERATION", "Name CPU",
+            BigDecimal.ONE, 1, List.of(), List.of(), null, original).question();
+        QuestionConfigInput revised = new QuestionConfigInput(List.of("CPU"), 1, false, null, null);
+
+        Question updated = service.updateQuestionConfiguration(question.getId(), "Name the processor",
+            BigDecimal.ONE, 1, revised, "{\"acceptedAnswers\":[\"CPU\"]}",
+            "{\"requiredAnswerCount\":1,\"ordered\":false}");
+        assertEquals("Name the processor", updated.getQuestionText());
+        assertEquals("{\"acceptedAnswers\":[\"CPU\"]}", updated.getCorrectAnswerData());
+
+        when(assessmentAttemptRepository.existsByAssessment_Id(8L)).thenReturn(true);
+        assertThrows(IllegalStateException.class, () -> service.updateQuestionConfiguration(question.getId(),
+            "Should not save", BigDecimal.ONE, 1, revised,
+            "{\"acceptedAnswers\":[\"Should not save\"]}",
+            "{\"requiredAnswerCount\":1,\"ordered\":false}"));
+        assertEquals("Name the processor", savedQuestion.getQuestionText());
     }
 
     @Test

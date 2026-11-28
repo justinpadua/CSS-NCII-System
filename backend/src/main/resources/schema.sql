@@ -130,6 +130,7 @@ CREATE TABLE questions (
     question_type VARCHAR(40) NOT NULL,
     question_text LONGTEXT NOT NULL,
     correct_answer_data JSON NOT NULL,
+    question_config JSON NULL,
     points DECIMAL(8,2) NOT NULL,
     display_order INT UNSIGNED NOT NULL,
     created_at DATETIME(6) NOT NULL,

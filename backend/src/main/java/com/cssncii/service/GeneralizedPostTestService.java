@@ -177,7 +177,7 @@ public class GeneralizedPostTestService {
                 .toList();
             prompts.add(new AssessmentAttemptService.QuestionPrompt(
                 question.getId(), question.getQuestionType(), question.getQuestionText(),
-                question.getPoints(), question.getDisplayOrder(), choices));
+                question.getPoints(), question.getDisplayOrder(), choices, matchingPrompts(question), question.getQuestionConfig()));
         }
         return prompts;
     }
@@ -192,6 +192,28 @@ public class GeneralizedPostTestService {
             .map(answer -> new AssessmentAttemptService.SavedAnswer(
                 answer.getQuestion().getId(), answer.getResponseData()))
             .toList();
+    }
+
+    private List<String> matchingPrompts(com.cssncii.entity.Question question) {
+        if (!"MATCHING_TYPE".equals(question.getQuestionType())) return List.of();
+        try {
+            var config = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(question.getQuestionConfig());
+            var prompts = config.get("matchingPrompts");
+            if (!config.isObject() || config.size() != 1 || prompts == null || !prompts.isArray() || prompts.isEmpty()) {
+                throw new IllegalStateException("Stored matching configuration is invalid.");
+            }
+            List<String> result = new ArrayList<>();
+            prompts.forEach(prompt -> {
+                if (!prompt.isTextual() || prompt.textValue().isBlank()) {
+                    throw new IllegalStateException("Stored matching configuration is invalid.");
+                }
+                result.add(prompt.textValue());
+            });
+            return result;
+        } catch (tools.jackson.core.JacksonException exception) {
+            throw new IllegalStateException("Stored matching configuration is invalid.", exception);
+        }
     }
 
     @Transactional

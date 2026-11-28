@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.LinkedHashSet;
+import java.util.HashSet;
+import java.util.Locale;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
@@ -126,7 +128,7 @@ public class AssessmentAttemptService {
                 .toList();
             prompts.add(new QuestionPrompt(
                 question.getId(), question.getQuestionType(), question.getQuestionText(),
-                question.getPoints(), question.getDisplayOrder(), choices));
+                question.getPoints(), question.getDisplayOrder(), choices, matchingPrompts(question), question.getQuestionConfig()));
         }
         return prompts;
     }
@@ -287,6 +289,40 @@ public class AssessmentAttemptService {
                 Set<Long> selected = choiceIds(response, "choiceIds", validChoiceIds, false);
                 isCorrect = selected.equals(expected);
             }
+            case "ENUMERATION" -> {
+                int required = requiredAnswerCount(question);
+                boolean ordered = orderedEnumeration(question);
+                List<String> accepted = acceptedAnswerList(correct);
+                if (accepted.size() < required) {
+                    throw new IllegalStateException("Stored enumeration accepted answers are incomplete.");
+                }
+                List<String> submitted = textArray(response, "answers", required);
+                int correctCount = 0;
+                if (ordered) {
+                    for (int i = 0; i < required; i++) {
+                        if (normalizeAnswer(submitted.get(i)).equals(normalizeAnswer(accepted.get(i)))) correctCount++;
+                    }
+                } else {
+                    Set<String> unmatched = new HashSet<>(accepted.stream().map(this::normalizeAnswer).toList());
+                    for (String answer : submitted) {
+                        String normalized = normalizeAnswer(answer);
+                        if (!normalized.isEmpty() && unmatched.remove(normalized)) correctCount++;
+                    }
+                }
+                return partialScore(question, correctCount, required);
+            }
+            case "MATCHING_TYPE" -> {
+                int required = matchingPrompts(question).size();
+                if (required == 0) throw new IllegalStateException("Matching question has no configured prompts.");
+                List<MatchEntry> expected = matchEntries(correct, validChoiceIds, true, required);
+                List<MatchEntry> selected = matchEntries(response, validChoiceIds, false, required);
+                int correctCount = 0;
+                for (int i = 0; i < required; i++) {
+                    if (java.util.Objects.equals(expected.get(i).choiceId(), selected.get(i).choiceId())
+                        && expected.get(i).choiceId() != null) correctCount++;
+                }
+                return partialScore(question, correctCount, required);
+            }
             default -> throw new IllegalArgumentException("Unsupported question type: " + questionType);
         }
         BigDecimal awarded = isCorrect ? question.getPoints() : BigDecimal.ZERO;
@@ -371,6 +407,117 @@ public class AssessmentAttemptService {
     private RuntimeException invalidValue(boolean storedAnswer, String message) {
         return storedAnswer ? new IllegalStateException(message) : new IllegalArgumentException(message);
     }
+
+    private ScoredAnswer partialScore(Question question, int correctCount, int total) {
+        BigDecimal points = question.getPoints().multiply(BigDecimal.valueOf(correctCount))
+            .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
+        return new ScoredAnswer(correctCount == total, points);
+    }
+
+    private List<String> acceptedAnswerList(JsonNode object) {
+        JsonNode values = object.get("acceptedAnswers");
+        if (object.size() != 1 || values == null || !values.isArray() || values.isEmpty()) {
+            throw new IllegalStateException("Stored accepted answers are invalid.");
+        }
+        List<String> result = new ArrayList<>();
+        values.forEach(value -> {
+            if (!value.isTextual() || value.textValue().isBlank()) {
+                throw new IllegalStateException("Stored accepted answers are invalid.");
+            }
+            result.add(value.textValue());
+        });
+        return result;
+    }
+
+    private List<String> textArray(JsonNode object, String name, int required) {
+        JsonNode values = object.get(name);
+        if (object.size() != 1 || values == null || !values.isArray() || values.size() != required) {
+            throw new IllegalArgumentException("Response must contain exactly the configured number of answers.");
+        }
+        List<String> result = new ArrayList<>();
+        values.forEach(value -> {
+            if (!value.isTextual()) throw new IllegalArgumentException("Each enumeration answer must be text.");
+            result.add(value.textValue());
+        });
+        return result;
+    }
+
+    private int requiredAnswerCount(Question question) {
+        JsonNode config = parseJson(question.getQuestionConfig(), "Stored enumeration configuration is invalid.", true);
+        JsonNode count = config.get("requiredAnswerCount");
+        if (config.size() != 2 || count == null || !count.canConvertToInt() || count.intValue() < 1
+            || !config.has("ordered") || !config.get("ordered").isBoolean()) {
+            throw new IllegalStateException("Stored enumeration configuration is invalid.");
+        }
+        return count.intValue();
+    }
+
+    private boolean orderedEnumeration(Question question) {
+        JsonNode config = parseJson(question.getQuestionConfig(), "Stored enumeration configuration is invalid.", true);
+        return config.get("ordered").booleanValue();
+    }
+
+    private List<String> matchingPrompts(Question question) {
+        if (!"MATCHING_TYPE".equals(question.getQuestionType())) return List.of();
+        JsonNode config = parseJson(question.getQuestionConfig(), "Stored matching configuration is invalid.", true);
+        JsonNode prompts = config.get("matchingPrompts");
+        if (config.size() != 1 || prompts == null || !prompts.isArray() || prompts.isEmpty()) {
+            throw new IllegalStateException("Stored matching configuration is invalid.");
+        }
+        List<String> result = new ArrayList<>();
+        prompts.forEach(prompt -> {
+            if (!prompt.isTextual() || prompt.textValue().isBlank()) {
+                throw new IllegalStateException("Stored matching configuration is invalid.");
+            }
+            result.add(prompt.textValue());
+        });
+        return result;
+    }
+
+    private List<MatchEntry> matchEntries(JsonNode object, Set<Long> validChoiceIds, boolean stored, int required) {
+        JsonNode values = object.get("matches");
+        if (object.size() != 1 || values == null || !values.isArray() || values.size() != required) {
+            throw invalidValue(stored, "Matching response must include one entry for every prompt.");
+        }
+        MatchEntry[] indexed = new MatchEntry[required];
+        Set<Long> usedOptions = new HashSet<>();
+        for (JsonNode item : values) {
+            JsonNode indexNode = item.get("promptIndex");
+            JsonNode choiceNode = item.get("choiceId");
+            if (!item.isObject() || item.size() != 2 || indexNode == null || !indexNode.canConvertToInt()
+                || choiceNode == null) throw invalidValue(stored, "Matching entries are malformed.");
+            int index = indexNode.intValue();
+            if (index < 0 || index >= required || indexed[index] != null) {
+                throw invalidValue(stored, "Matching prompt indexes must be unique and in range.");
+            }
+            Long choiceId = null;
+            if (!choiceNode.isNull()) {
+                if (!choiceNode.isIntegralNumber() || !choiceNode.canConvertToLong() || choiceNode.longValue() <= 0) {
+                    throw invalidValue(stored, "Matching choice IDs must be positive integers or null.");
+                }
+                choiceId = choiceNode.longValue();
+                requireChoiceBelongs(validChoiceIds, choiceId, stored);
+                if (!usedOptions.add(choiceId)) {
+                    throw invalidValue(stored, stored
+                        ? "A correct matching option cannot be mapped more than once."
+                        : "A matching option may only be selected once.");
+                }
+            } else if (stored) {
+                throw new IllegalStateException("Stored matching answer cannot be blank.");
+            }
+            indexed[index] = new MatchEntry(index, choiceId);
+        }
+        if (java.util.Arrays.stream(indexed).anyMatch(java.util.Objects::isNull)) {
+            throw invalidValue(stored, "Every matching prompt must have an entry.");
+        }
+        return List.of(indexed);
+    }
+
+    private String normalizeAnswer(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private record MatchEntry(int promptIndex, Long choiceId) {}
 
     private SubmissionResult toSubmissionResult(
         AssessmentAttempt attempt, List<Question> questions, Map<Long, AttemptAnswer> answers
@@ -509,8 +656,20 @@ public class AssessmentAttemptService {
         String questionText,
         BigDecimal points,
         long displayOrder,
-        List<ChoicePrompt> choices
-    ) {}
+        List<ChoicePrompt> choices,
+        List<String> matchingPrompts,
+        String questionConfig
+    ) {
+        public QuestionPrompt(Long questionId, String questionType, String questionText,
+                              BigDecimal points, long displayOrder, List<ChoicePrompt> choices) {
+            this(questionId, questionType, questionText, points, displayOrder, choices, List.of(), null);
+        }
+        public QuestionPrompt(Long questionId, String questionType, String questionText,
+                              BigDecimal points, long displayOrder, List<ChoicePrompt> choices,
+                              List<String> matchingPrompts) {
+            this(questionId, questionType, questionText, points, displayOrder, choices, matchingPrompts, null);
+        }
+    }
 
     public record ChoicePrompt(Long choiceId, String choiceText, int displayOrder) {}
 

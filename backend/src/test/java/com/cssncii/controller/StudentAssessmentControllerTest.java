@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -113,5 +114,24 @@ class StudentAssessmentControllerTest {
         verify(discussionRepository).findActiveCompetencyIdByDiscussionId(41L);
         verify(learningService).openStage(73L, 10L, 41L, "PRE_TEST");
         verify(attemptService).startOrResumeAttempt(73L, 91L);
+    }
+
+    @Test
+    void studentQuestionPromptDoesNotExposeCorrectMatchingMap() throws Exception {
+        StudentPrincipal principal = new StudentPrincipal(73L, "STU-000073", "Jordan Student", "BSCS");
+        when(attemptService.getQuestionsForAttempt(73L, 101L)).thenReturn(List.of(
+            new AssessmentAttemptService.QuestionPrompt(21L, "MATCHING_TYPE", "Match the terms.",
+                new java.math.BigDecimal("2.00"), 1,
+                List.of(new AssessmentAttemptService.ChoicePrompt(31L, "Processor", 1)),
+                List.of("CPU"), "{\"matchingPrompts\":[\"CPU\"]}")));
+
+        mockMvc.perform(get("/api/student/assessments/attempts/101/questions")
+                .with(authentication(new UsernamePasswordAuthenticationToken(
+                    principal, "", List.of(new SimpleGrantedAuthority("ROLE_STUDENT"))))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].matchingPrompts[0]").value("CPU"))
+            .andExpect(jsonPath("$[0].choices[0].choiceText").value("Processor"))
+            .andExpect(jsonPath("$[0].correctAnswerData").doesNotExist())
+            .andExpect(jsonPath("$[0].correctChoiceIds").doesNotExist());
     }
 }

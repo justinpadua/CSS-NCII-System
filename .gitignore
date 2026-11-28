@@ -20,6 +20,7 @@ learning-content/instructor-only/
 
 # Database scripts and backups
 *.sql
+!docs/add_assessment_question_config.sql
 *.dump
 *.bak
 *.backup

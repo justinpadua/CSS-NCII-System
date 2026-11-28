@@ -6,6 +6,8 @@ import {
   updateAnswerChoice, updateAssessment, updateAssessmentQuestion,
 } from './assessmentApi.js'
 import { getCorrectChoiceIndexes, updateCorrectChoice } from './assessmentQuestionState.js'
+import { assessmentCreationRequest, assessmentTypeForScope } from './assessmentManagementState.js'
+import { appendMatchingPair, buildMatchingQuestionConfig, removeMatchingDistractor, renameMatchingOption } from './matchingQuestionState.js'
 
 const DISCUSSION_TYPES = [
   { code: 'PRE_TEST', label: 'Pre-test' },
@@ -13,7 +15,7 @@ const DISCUSSION_TYPES = [
   { code: 'DISCUSSION_POST_TEST', label: 'Discussion Post-test' },
 ]
 const GENERALIZED_TYPE = 'GENERALIZED_POST_TEST'
-const QUESTION_TYPES = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'MULTIPLE_SELECT']
+const QUESTION_TYPES = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'MULTIPLE_SELECT', 'MATCHING_TYPE', 'ENUMERATION']
 
 function messageFor(error) {
   if (error.status === 401) return 'Your Admin session has expired. Please log in again.'
@@ -32,6 +34,11 @@ function blankQuestion(order = 1) {
       { id: null, choiceText: '', displayOrder: '2', correct: false },
     ],
     correctValue: true,
+    acceptedAnswersText: '',
+    requiredAnswerCount: '1',
+    ordered: false,
+    matchingPairs: [{ prompt: '', answerText: '' }],
+    distractorsText: '',
   }
 }
 
@@ -156,10 +163,12 @@ function AssessmentManagement({ onSessionExpired }) {
     if (!competencyId || (scope === 'discussion' && !discussionId)) return
     const title = createTitle.trim()
     await run(async () => {
-      const payload = { assessmentType: createType, title, instructions: createInstructions.trim() || null, active: createActive }
-      const created = scope === 'generalized'
-        ? await createGeneralizedAssessment(competencyId, payload)
-        : await createDiscussionAssessment(competencyId, discussionId, payload)
+      const request = assessmentCreationRequest(scope, competencyId, discussionId, createType, {
+        title, instructions: createInstructions.trim() || null, active: createActive,
+      })
+      const created = request.scope === 'generalized'
+        ? await createGeneralizedAssessment(request.competencyId, request.body)
+        : await createDiscussionAssessment(request.competencyId, request.discussionId, request.body)
       setAssessments(items => [...items, created])
       setAssessmentId(String(created.id))
       if (scope === 'discussion' && createType !== GENERALIZED_TYPE) {
@@ -170,6 +179,9 @@ function AssessmentManagement({ onSessionExpired }) {
   }
 
   function editQuestion(question) {
+    const savedConfiguration = question.questionConfiguration ? JSON.parse(question.questionConfiguration) : {}
+    const matchingPairs = savedConfiguration.matchingPairs || []
+    const matchingAnswerTexts = new Set(matchingPairs.map(pair => pair.answerText.trim().toLowerCase()))
     setQuestionDraft({
       id: question.id,
       questionType: question.questionType,
@@ -178,6 +190,14 @@ function AssessmentManagement({ onSessionExpired }) {
       displayOrder: String(question.displayOrder),
       choices: question.choices.map(choice => ({ ...choice, displayOrder: String(choice.displayOrder) })),
       correctValue: question.correctValue ?? true,
+      acceptedAnswersText: (savedConfiguration.acceptedAnswers || []).join('\n'),
+      requiredAnswerCount: String(savedConfiguration.requiredAnswerCount ?? 1),
+      ordered: Boolean(savedConfiguration.ordered),
+      matchingPairs: matchingPairs.length ? matchingPairs : [{ prompt: '', answerText: '' }],
+      matchingOptions: question.questionType === 'MATCHING_TYPE'
+        ? question.choices.map(choice => ({ id: choice.id, optionText: choice.choiceText })) : [],
+      distractorsText: (savedConfiguration.distractors || question.choices
+        .filter(choice => !matchingAnswerTexts.has(choice.choiceText.trim().toLowerCase())).map(choice => choice.choiceText)).join('\n'),
     })
     setError(''); setNotice('')
   }
@@ -193,22 +213,33 @@ function AssessmentManagement({ onSessionExpired }) {
       points,
       displayOrder: order,
     }
+    const acceptedAnswers = (questionDraft.acceptedAnswersText || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+    const questionConfig = questionDraft.questionType === 'ENUMERATION'
+      ? { acceptedAnswers, requiredAnswerCount: Number(questionDraft.requiredAnswerCount), ordered: questionDraft.ordered }
+      : questionDraft.questionType === 'MATCHING_TYPE'
+        ? buildMatchingQuestionConfig(questionDraft.matchingPairs, questionDraft.matchingOptions,
+          Boolean(questionDraft.id), questionDraft.distractorsText)
+        : null
     await run(async () => {
       if (!questionDraft.id) {
         const isBoolean = questionDraft.questionType === 'TRUE_FALSE'
+        const isNewType = ['MATCHING_TYPE', 'ENUMERATION'].includes(questionDraft.questionType)
         const created = await createAssessmentQuestion(assessment.id, {
           ...common,
-          choices: isBoolean ? [] : questionDraft.choices.map(choice => ({
+          choices: isBoolean || isNewType ? [] : questionDraft.choices.map(choice => ({
             choiceText: choice.choiceText.trim(), displayOrder: Number(choice.displayOrder),
           })),
-          correctChoiceIndexes: isBoolean ? [] : getCorrectChoiceIndexes(questionDraft.choices),
+          correctChoiceIndexes: isBoolean || isNewType ? [] : getCorrectChoiceIndexes(questionDraft.choices),
           correctValue: isBoolean ? questionDraft.correctValue : null,
+          questionConfig,
         })
         setQuestions(items => [...items, created].sort((a, b) => a.displayOrder - b.displayOrder))
         setQuestionDraft(null)
       } else {
+        const isNewType = ['MATCHING_TYPE', 'ENUMERATION'].includes(questionDraft.questionType)
         const saved = await updateAssessmentQuestion(assessment.id, questionDraft.id, {
           ...common,
+          ...(isNewType ? { questionConfig } : {}),
           correctChoiceIds: questionDraft.questionType === 'TRUE_FALSE' ? [] : questionDraft.choices
             .filter(choice => choice.correct).map(choice => choice.id),
           correctValue: questionDraft.questionType === 'TRUE_FALSE' ? questionDraft.correctValue : null,
@@ -261,6 +292,8 @@ function AssessmentManagement({ onSessionExpired }) {
     ...current,
     choices: updateCorrectChoice(current.choices, index, checked, current.questionType),
   }))
+  const updateMatchingOption = (index, optionText) => setQuestionDraft(current => renameMatchingOption(current, index, optionText))
+  const removeMatchingOption = index => setQuestionDraft(current => removeMatchingDistractor(current, index))
 
   const missingTypes = scope === 'generalized'
     ? (usedTypes.has(GENERALIZED_TYPE) ? [] : [GENERALIZED_TYPE])
@@ -281,7 +314,7 @@ function AssessmentManagement({ onSessionExpired }) {
         <label className="text-sm font-semibold text-slate-700">COC<select value={competencyId} onChange={event => { setCompetencyId(event.target.value); setDiscussionId(''); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
           {competencies.map(item => <option key={item.id} value={item.id}>{item.code === 'COC1' ? 'COC 1' : item.code === 'COC2' ? 'COC 2' : item.title}</option>)}
         </select></label>
-        <label className="text-sm font-semibold text-slate-700">Assessment scope<select value={scope} onChange={event => { setScope(event.target.value); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
+        <label className="text-sm font-semibold text-slate-700">Assessment scope<select value={scope} onChange={event => { const nextScope = event.target.value; setScope(nextScope); setCreateType(current => assessmentTypeForScope(nextScope, current)); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
           <option value="discussion">Discussion assessment</option><option value="generalized">Generalized Post-test</option>
         </select></label>
         {scope === 'discussion' ? <label className="text-sm font-semibold text-slate-700">Discussion<select value={discussionId} onChange={event => { setDiscussionId(event.target.value); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
@@ -334,14 +367,52 @@ function AssessmentManagement({ onSessionExpired }) {
               {questionDraft && <form onSubmit={saveQuestion} className="space-y-4 rounded-2xl border border-teal-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">{questionDraft.id ? 'Edit question' : 'New question'}</h2><button type="button" onClick={() => setQuestionDraft(null)} className="text-sm font-semibold text-slate-600 underline">Close</button></div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="text-sm font-medium text-slate-700">Question type<select disabled={Boolean(questionDraft.id)} value={questionDraft.questionType} onChange={event => setDraft('questionType', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100">{QUESTION_TYPES.map(type => <option key={type}>{type}</option>)}</select></label>
+                  <label className="text-sm font-medium text-slate-700">Question type<select disabled={Boolean(questionDraft.id)} value={questionDraft.questionType} onChange={event => setDraft('questionType', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100">{QUESTION_TYPES.filter(type => assessment?.assessmentType !== 'ACTIVITY' || !['MATCHING_TYPE', 'ENUMERATION'].includes(type)).map(type => <option key={type}>{type}</option>)}</select></label>
                   <label className="text-sm font-medium text-slate-700">Points<input type="number" min="0" max="999999.99" step="0.01" required value={questionDraft.points} onChange={event => setDraft('points', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
                   <label className="text-sm font-medium text-slate-700">Order<input type="number" min="0" required value={questionDraft.displayOrder} onChange={event => setDraft('displayOrder', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
                 </div>
                 {questionDraft.id && <p className="text-xs text-slate-500">Question type is fixed after creation to avoid changing how saved attempts are interpreted.</p>}
                 <label className="block text-sm font-medium text-slate-700">Question prompt<textarea required rows="3" value={questionDraft.questionText} onChange={event => setDraft('questionText', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
 
-                {questionDraft.questionType === 'TRUE_FALSE' ? <fieldset className="flex gap-5 text-sm"><legend className="mb-2 font-semibold">Correct answer</legend>{[true, false].map(value => <label key={String(value)} className="flex items-center gap-2"><input type="radio" name="correctValue" checked={questionDraft.correctValue === value} onChange={() => setDraft('correctValue', value)} />{value ? 'True' : 'False'}</label>)}</fieldset> : <fieldset className="space-y-3"><legend className="font-semibold">Answer choices · mark correct answer{questionDraft.questionType === 'MULTIPLE_SELECT' ? 's' : ''}</legend>
+                {questionDraft.questionType === 'ENUMERATION'
+                  ? <fieldset className="space-y-3"><legend className="font-semibold">Accepted answers</legend>
+                    {questionDraft.questionType === 'ENUMERATION' && <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm font-medium text-slate-700">Required answer fields<input type="number" min="1" required value={questionDraft.requiredAnswerCount} onChange={event => setDraft('requiredAnswerCount', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
+                      <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700"><input type="checkbox" checked={questionDraft.ordered} onChange={event => setDraft('ordered', event.target.checked)} />Answers must be in order</label>
+                    </div>}
+                    <label className="block text-sm text-slate-700">One accepted answer per line<textarea required rows="4" value={questionDraft.acceptedAnswersText} onChange={event => setDraft('acceptedAnswersText', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
+                    {questionDraft.questionType === 'ENUMERATION' && <p className="text-xs text-slate-500">Unordered answers award partial credit; duplicate submissions count once. Blank fields are allowed.</p>}
+                  </fieldset>
+                  : questionDraft.questionType === 'MATCHING_TYPE'
+                    ? <fieldset className="space-y-3"><legend className="font-semibold">Matching pairs</legend>
+                      {questionDraft.matchingPairs.map((pair, index) => <div key={`pair-${index}`} className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
+                        <input required aria-label={`Matching prompt ${index + 1}`} placeholder={`Prompt ${index + 1}`} value={pair.prompt} onChange={event => setQuestionDraft(current => ({ ...current, matchingPairs: current.matchingPairs.map((item, pairIndex) => pairIndex === index ? { ...item, prompt: event.target.value } : item) }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                        {questionDraft.id
+                          ? <select required aria-label={`Correct match ${index + 1}`} value={pair.answerText} onChange={event => setQuestionDraft(current => ({ ...current, matchingPairs: current.matchingPairs.map((item, pairIndex) => pairIndex === index ? { ...item, answerText: event.target.value } : item) }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            <option value="">Choose shared option</option>{questionDraft.matchingOptions.map((option, optionIndex) => <option key={option.id ?? `option-${optionIndex}`} value={option.optionText}>{option.optionText || `New option ${optionIndex + 1}`}</option>)}
+                          </select>
+                          : <input required aria-label={`Correct match ${index + 1}`} placeholder={`Correct shared option ${index + 1}`} value={pair.answerText} onChange={event => setQuestionDraft(current => ({ ...current, matchingPairs: current.matchingPairs.map((item, pairIndex) => pairIndex === index ? { ...item, answerText: event.target.value } : item) }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />}
+                        {questionDraft.matchingPairs.length > 1 && <button type="button" onClick={() => setDraft('matchingPairs', questionDraft.matchingPairs.filter((_, pairIndex) => pairIndex !== index))} className="justify-self-start text-xs font-semibold text-red-700">Remove pair</button>}
+                      </div>)}
+                      <button type="button" onClick={() => setDraft('matchingPairs', appendMatchingPair(questionDraft.matchingPairs))} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold">Add pair</button>
+                      {questionDraft.id
+                        ? <div className="space-y-2 rounded-lg border border-slate-200 p-3"><h3 className="text-sm font-semibold">Shared dropdown options</h3>
+                          {questionDraft.matchingOptions.map((option, index) => {
+                            const isMapped = questionDraft.matchingPairs.some(pair => pair.answerText === option.optionText)
+                            return <div key={option.id ?? `new-option-${index}`} className="flex gap-2">
+                              <input required aria-label={`Shared option ${index + 1}`} value={option.optionText} onChange={event => updateMatchingOption(index, event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                              {!isMapped && <button type="button" onClick={() => removeMatchingOption(index)} className="text-xs font-semibold text-red-700">Remove distractor</button>}
+                            </div>
+                          })}
+                          <button type="button" onClick={() => setQuestionDraft(current => ({ ...current, matchingOptions: [...current.matchingOptions, { id: null, optionText: '' }] }))} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold">Add distractor option</button>
+                          <p className="text-xs text-slate-500">Options selected by a prompt are correct matches. Unselected options are distractors. Remap a correct option before removing it.</p>
+                        </div>
+                        : <label className="block text-sm text-slate-700">Optional distractors, one per line<textarea rows="3" value={questionDraft.distractorsText} onChange={event => setDraft('distractorsText', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>}
+                      <p className="text-xs text-slate-500">Students choose from one shared dropdown list. Each option can be matched only once.</p>
+                    </fieldset>
+                    : questionDraft.questionType === 'TRUE_FALSE'
+                      ? <fieldset className="flex gap-5 text-sm"><legend className="mb-2 font-semibold">Correct answer</legend>{[true, false].map(value => <label key={String(value)} className="flex items-center gap-2"><input type="radio" name="correctValue" checked={questionDraft.correctValue === value} onChange={() => setDraft('correctValue', value)} />{value ? 'True' : 'False'}</label>)}</fieldset>
+                      : <fieldset className="space-y-3"><legend className="font-semibold">Answer choices · mark correct answer{questionDraft.questionType === 'MULTIPLE_SELECT' ? 's' : ''}</legend>
                   {questionDraft.choices.map((choice, index) => <div key={choice.id ?? `new-${index}`} className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[auto_minmax(0,1fr)_6rem_auto_auto] sm:items-center">
                     <input aria-label={`Choice ${index + 1} is correct`} type={questionDraft.questionType === 'MULTIPLE_SELECT' ? 'checkbox' : 'radio'} name="correct-choice" checked={Boolean(choice.correct)} onChange={event => updateDraftCorrectChoice(index, event.target.checked)} />
                     <input required maxLength={50000} aria-label={`Choice ${index + 1} text`} placeholder={`Choice ${index + 1}`} value={choice.choiceText} onChange={event => updateDraftChoice(index, { choiceText: event.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />

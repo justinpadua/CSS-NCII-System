@@ -420,3 +420,38 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - Corrected the short-height mobile progress panel so screens at or below 639px wide stack the progress ring above its explanatory copy. The ring is smaller at this breakpoint, while the explanation remains full-width and readable. Shorter wider screens retain the existing side-by-side layout.
 - Kept the fixed dashboard shell and independent sidebar and competency scroll areas unchanged. No student behavior, logos, or footer branding changed.
 - Added responsive CSS checks for narrow short screens, wider short screens, and taller mobile screens. **Verification:** all 29 frontend tests passed, ESLint passed, the production build passed, and `git diff --check` passed.
+
+## 49. Automatically Graded Assessment Question Types (2026-11-28; revised 2026-11-28)
+
+- Added MATCHING_TYPE and ENUMERATION for Pre-tests, Discussion Post-tests, and Generalized Post-tests. ACTIVITY continues to reject these question types. Existing question types and legacy answer-key handling remain supported.
+- Added nullable `questions.question_config` JSON for prompt configuration, while correct answers remain in the existing `correct_answer_data` field. The baseline schema includes the column and `docs/add_assessment_question_config.sql` is an additive `ADD COLUMN IF NOT EXISTS` migration. The migration has not been executed.
+- Enumeration answers are graded case-insensitively after trimming and collapsing whitespace. Enumeration supports ordered/unordered grading, duplicate prevention for unordered answers, blanks, and proportional partial credit. Matching uses shared dropdown options, one-to-one choice use, and proportional partial credit rounded to two decimals.
+- Student prompts expose only the configuration needed to render each question; answer keys remain subject to the existing result and feedback policies. Admins can create and edit the new types; questions with existing attempts are protected from configuration edits.
+- Added backend grading, management, and student-prompt tests plus frontend form rendering coverage. **Verification:** focused backend tests passed (AdminAssessmentControllerTest 10, StudentAssessmentControllerTest 4, AssessmentAttemptServiceTest 12, AssessmentManagementServiceTest 17); frontend tests, lint, production build, and `git diff --check` passed. The full backend test suite was not completed because existing Spring integration tests attempted to authenticate to localhost MySQL and failed; no database migration or database write was performed.
+
+## 50. Generalized Post-test Creation and Assessment Regression Coverage (2026-11-28)
+
+- Fixed the Admin assessment scope switch so Generalized Post-test scope selects and submits `GENERALIZED_POST_TEST` even if the previous Discussion type state was stale. Switching back to Discussion restores a valid Discussion type; backend scope validation remains unchanged.
+- Guarded the legacy `createQuestion` service method so only MULTIPLE_CHOICE, MULTIPLE_SELECT, and TRUE_FALSE use that path. The new configurable types must use configured creation.
+- Added frontend scope/request regression tests, COC 1/COC 2 Generalized creation coverage, Generalized student prompt secrecy coverage for both configurable question types, and existing answer-feedback policy coverage.
+- **Database note:** project documentation identifies local MySQL 8.0.46, but the repository does not pin the actual installed server version or the TiDB Cloud cluster version. The current `ADD COLUMN IF NOT EXISTS` migration is supported by TiDB's documented syntax but is not part of MySQL 8.0's `ALTER TABLE ADD` grammar. A portable approach requires a metadata check in the migration runner before issuing plain `ALTER TABLE ... ADD COLUMN`; the migration was not executed.
+- **Verification:** focused backend suites passed (48 tests), backend compile passed, frontend tests passed (34), ESLint, production build, and `git diff --check` passed. No database was connected and no migration was run.
+
+## 51. Final Approved Assessment Question Types (2026-11-28)
+
+- The supported types are MULTIPLE_CHOICE, MULTIPLE_SELECT, TRUE_FALSE, MATCHING_TYPE, and ENUMERATION. Matching Type and Enumeration remain available in Pre-tests, Discussion Post-tests, and Generalized Post-tests; Activities retain their existing practical-task behavior.
+- Removed the Identification form, response defaults, validation, answer-key configuration, grading branch, and type-specific tests. The nullable `question_config` schema and migration remain because Matching Type and Enumeration still require them. Existing database records and history were not accessed or changed.
+- Preserved the Generalized Post-test scope selection/request fix and COC 1/COC 2 coverage. Verification for this revision is tracked in the current test run; no migration, database connection, commit, push, or deployment was performed.
+- **Verification:** focused backend suites passed (50 tests across five suites), frontend tests passed (34), ESLint, production build, and `git diff --check` passed. No database was connected and no migration was run.
+
+## 52. Matching Type Question Editing (2026-11-28)
+
+- Admins can edit matching prompts and mappings, edit the full shared dropdown option list, add pairs and distractors, and remove pairs or unused distractors. The update request carries existing option IDs so the backend can preserve stable option references while reconciling additions and removals.
+- The backend validates unique prompts/options and mapping references, rebuilds prompt indexes and choice-ID mappings in one transaction, and retains the existing restriction that configured questions cannot be edited after assessment attempts exist. Student grading and partial credit remain unchanged.
+- **Verification:** focused backend suites passed (54 tests), frontend tests passed (38), ESLint, production build, and `git diff --check` passed. No migration or database connection was used.
+
+## 53. Matching Type Option Reuse Protection (2026-11-28)
+
+- Student Matching Type dropdowns disable options selected by other prompts, while keeping the current prompt's selection available. Changing or clearing a selection releases the previous option; correct options and distractors follow the same rule.
+- Backend matching response validation rejects duplicate non-null choice IDs before scoring, so invalid reuse cannot receive partial credit. Unique partial answers retain the existing grading calculation. Enumeration and the three original question types are unchanged.
+- **Verification:** focused backend suites passed (55 tests), frontend tests passed (41), ESLint, production build, and `git diff --check` passed. No database connection, migration, or SQL execution was performed.

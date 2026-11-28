@@ -33,6 +33,9 @@ public class Question {
     @Column(name = "correct_answer_data", nullable = false, columnDefinition = "JSON")
     private String correctAnswerData;
 
+    @Column(name = "question_config", columnDefinition = "JSON")
+    private String questionConfig;
+
     @Column(name = "points", nullable = false, precision = 8, scale = 2)
     private BigDecimal points;
 
@@ -56,6 +59,8 @@ public class Question {
     public void setQuestionText(String questionText) { this.questionText = questionText; }
     public String getCorrectAnswerData() { return correctAnswerData; }
     public void setCorrectAnswerData(String correctAnswerData) { this.correctAnswerData = correctAnswerData; }
+    public String getQuestionConfig() { return questionConfig; }
+    public void setQuestionConfig(String questionConfig) { this.questionConfig = questionConfig; }
     public BigDecimal getPoints() { return points; }
     public void setPoints(BigDecimal points) { this.points = points; }
     public long getDisplayOrder() { return displayOrder; }

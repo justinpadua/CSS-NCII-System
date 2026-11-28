@@ -3,6 +3,7 @@ import { studentApiRequest } from './studentAuth.js'
 import SafeMarkdown from './SafeMarkdown.jsx'
 import YouTubeVideoPlayers from './YouTubeVideoPlayers.jsx'
 import { completedStageCount, overallProgressPercent } from './studentDashboardMetrics.js'
+import { isMatchingOptionDisabled, matchingSelectionsWithChange } from './matchingQuestionState.js'
 
 const stageTitles = {
   PRE_TEST: 'Pre-test', DEFINITIONS: 'Definition of Terms', EXPLANATION: 'Explanation',
@@ -184,7 +185,9 @@ export default function StudentLearningDashboard({ student, onSessionExpired, se
   }
 
   async function submitAttempt(generalized = false) {
-    if (!attempt || questions.some(question => answers[question.questionId] === undefined)) {
+    const typeSpecificQuestions = ['MATCHING_TYPE', 'ENUMERATION']
+    if (!attempt || questions.some(question => answers[question.questionId] === undefined
+      && !typeSpecificQuestions.includes(question.questionType))) {
       setError('Please answer every question before submitting.')
       return
     }
@@ -194,9 +197,15 @@ export default function StudentLearningDashboard({ student, onSessionExpired, se
       const prefix = generalized ? 'generalized-attempts' : 'attempts'
       const answerPath = `/api/student/assessments/${prefix}/${attempt.attemptId}/answers`
       for (const question of questions) {
+        const config = question.questionConfig ? JSON.parse(question.questionConfig) : {}
+        const response = answers[question.questionId] ?? (question.questionType === 'MATCHING_TYPE'
+          ? { matches: question.matchingPrompts.map((_, promptIndex) => ({ promptIndex, choiceId: null })) }
+          : question.questionType === 'ENUMERATION'
+            ? { answers: Array.from({ length: config.requiredAnswerCount }, () => '') }
+            : undefined)
         await studentApiRequest(answerPath, {
           method: 'PUT',
-          body: { questionId: question.questionId, responseData: JSON.stringify(answers[question.questionId]) },
+          body: { questionId: question.questionId, responseData: JSON.stringify(response) },
         })
       }
       const result = await studentApiRequest(`/api/student/assessments/${prefix}/${attempt.attemptId}/submit`, { method: 'POST' })
@@ -348,18 +357,27 @@ export default function StudentLearningDashboard({ student, onSessionExpired, se
   )
 }
 
-function AssessmentForm({ title, questions, answers, onAnswer, onSubmit, busy }) {
+export function AssessmentForm({ title, questions, answers, onAnswer, onSubmit, busy }) {
   return (
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 sm:p-7">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-bold">{title}</h3>
         <span className="text-sm text-slate-500">{questions.length} questions</span>
       </div>
-      {questions.map((question, index) => (
-        <fieldset key={question.questionId} className="rounded-xl border border-slate-200 p-4">
+      {questions.map((question, index) => {
+        const config = question.questionConfig ? JSON.parse(question.questionConfig) : {}
+        return <fieldset key={question.questionId} className="rounded-xl border border-slate-200 p-4">
           <legend className="px-1 font-semibold text-slate-900">{index + 1}. {question.questionText}</legend>
           <div className="mt-3 space-y-2">
-            {question.questionType === 'MULTIPLE_SELECT'
+            {question.questionType === 'MATCHING_TYPE'
+                ? <div className="space-y-3">{question.matchingPrompts.map((prompt, promptIndex) => {
+                  const selected = answers[question.questionId]?.matches || []
+                  const selectedId = selected.find(match => match.promptIndex === promptIndex)?.choiceId ?? ''
+                  return <label key={`${question.questionId}-${promptIndex}`} className="grid gap-2 text-slate-900 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,.8fr)] sm:items-center"><span>{prompt}</span><select value={selectedId} onChange={event => onAnswer(question, { matches: matchingSelectionsWithChange(selected, question.matchingPrompts.length, promptIndex, event.target.value) })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="">Select a match</option>{question.choices.map(choice => <option key={choice.choiceId} value={choice.choiceId} disabled={isMatchingOptionDisabled(selected, promptIndex, choice.choiceId, selectedId)}>{choice.choiceText}</option>)}</select></label>
+                })}</div>
+                : question.questionType === 'ENUMERATION'
+                  ? <div className="space-y-2">{Array.from({ length: config.requiredAnswerCount }, (_, answerIndex) => <label key={`${question.questionId}-${answerIndex}`} className="block text-sm text-slate-700">Answer {answerIndex + 1}<input type="text" value={answers[question.questionId]?.answers?.[answerIndex] ?? ''} onChange={event => { const current = answers[question.questionId]?.answers || Array.from({ length: config.requiredAnswerCount }, () => ''); onAnswer(question, { answers: current.map((value, itemIndex) => itemIndex === answerIndex ? event.target.value : value) }) }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900" /></label>)}</div>
+                  : question.questionType === 'MULTIPLE_SELECT'
               ? question.choices.map(choice => {
                 const selected = answers[question.questionId]?.choiceIds || []
                 return (
@@ -403,7 +421,7 @@ function AssessmentForm({ title, questions, answers, onAnswer, onSubmit, busy })
                 ))}
           </div>
         </fieldset>
-      ))}
+      })}
       <button type="button" onClick={onSubmit} disabled={busy || !questions.length} className="rounded-lg bg-teal-800 px-5 py-2.5 font-semibold text-white hover:bg-teal-900 disabled:opacity-50">
         {busy ? 'Submitting…' : 'Submit assessment'}
       </button>

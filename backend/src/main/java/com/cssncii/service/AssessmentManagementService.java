@@ -5,6 +5,9 @@ import com.cssncii.entity.Assessment;
 import com.cssncii.entity.Competency;
 import com.cssncii.entity.Discussion;
 import com.cssncii.entity.Question;
+import com.cssncii.dto.AssessmentManagementDtos.QuestionConfigInput;
+import com.cssncii.dto.AssessmentManagementDtos.MatchingOptionInput;
+import com.cssncii.dto.AssessmentManagementDtos.MatchingPairInput;
 import com.cssncii.repository.AnswerChoiceRepository;
 import com.cssncii.repository.AssessmentAttemptRepository;
 import com.cssncii.repository.AssessmentRepository;
@@ -23,6 +26,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,8 +41,11 @@ public class AssessmentManagementService {
     private static final List<String> DISCUSSION_ASSESSMENT_TYPES =
         List.of("PRE_TEST", "ACTIVITY", "DISCUSSION_POST_TEST");
     private static final Set<String> SUPPORTED_QUESTION_TYPES =
-        Set.of("MULTIPLE_CHOICE", "TRUE_FALSE", "MULTIPLE_SELECT");
+        Set.of("MULTIPLE_CHOICE", "TRUE_FALSE", "MULTIPLE_SELECT", "MATCHING_TYPE", "ENUMERATION");
+    private static final Set<String> LEGACY_QUESTION_TYPES =
+        Set.of("MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE");
     private static final String GENERALIZED_POST_TEST = "GENERALIZED_POST_TEST";
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final AssessmentRepository assessmentRepository;
     private final QuestionRepository questionRepository;
@@ -124,13 +133,17 @@ public class AssessmentManagementService {
         long displayOrder
     ) {
         Assessment assessment = findAssessment(assessmentId);
-        validateQuestion(questionType, questionText, correctAnswerData, points, displayOrder);
+        String type = normalizeQuestionType(questionType);
+        if (!LEGACY_QUESTION_TYPES.contains(type)) {
+            throw new IllegalArgumentException("New question types must use configured question creation.");
+        }
+        validateQuestion(type, questionText, correctAnswerData, points, displayOrder);
         ensureQuestionOrderAvailable(assessmentId, displayOrder, null);
 
         LocalDateTime now = utcNow();
         Question question = new Question();
         question.setAssessment(assessment);
-        question.setQuestionType(normalizeQuestionType(questionType));
+        question.setQuestionType(type);
         question.setQuestionText(requiredBody("questionText", questionText));
         question.setCorrectAnswerData(requiredBody("correctAnswerData", correctAnswerData));
         question.setPoints(points);
@@ -152,14 +165,44 @@ public class AssessmentManagementService {
         List<Integer> correctChoiceIndexes,
         Boolean correctValue
     ) {
+        return createQuestionWithChoices(assessmentId, questionType, questionText, points, displayOrder,
+            choiceDefinitions, correctChoiceIndexes, correctValue, null);
+    }
+
+    @Transactional
+    public ConfiguredQuestion createQuestionWithChoices(
+        Long assessmentId,
+        String questionType,
+        String questionText,
+        BigDecimal points,
+        long displayOrder,
+        List<ChoiceDefinition> choiceDefinitions,
+        List<Integer> correctChoiceIndexes,
+        Boolean correctValue,
+        QuestionConfigInput questionConfig
+    ) {
         Assessment assessment = findAssessment(assessmentId);
         String type = normalizeQuestionType(questionType);
+        if ("ACTIVITY".equals(assessment.getAssessmentType()) && isNewQuestionType(type)) {
+            throw new IllegalArgumentException("New automatically graded question types are not available for Activities.");
+        }
         validateQuestion(type, questionText, "{}", points, displayOrder);
         ensureQuestionOrderAvailable(assessmentId, displayOrder, null);
         List<ChoiceDefinition> definitions = choiceDefinitions == null ? List.of() : choiceDefinitions;
         List<Integer> correctIndexes = correctChoiceIndexes == null ? List.of() : correctChoiceIndexes;
 
-        if ("TRUE_FALSE".equals(type)) {
+        if (isNewQuestionType(type)) {
+            validateNewQuestionConfiguration(type, questionConfig);
+            if (correctValue != null || !correctIndexes.isEmpty()) {
+                throw new IllegalArgumentException("New question types use their type-specific answer configuration.");
+            }
+            if ("MATCHING_TYPE".equals(type) && definitions.size() < questionConfig.matchingPairs().size()) {
+                throw new IllegalArgumentException("Matching questions require an answer option for every pair.");
+            }
+            if (!"MATCHING_TYPE".equals(type) && !definitions.isEmpty()) {
+                throw new IllegalArgumentException("Only Matching Type questions use answer choices.");
+            }
+        } else if ("TRUE_FALSE".equals(type)) {
             if (!definitions.isEmpty() || !correctIndexes.isEmpty() || correctValue == null) {
                 throw new IllegalArgumentException("TRUE_FALSE questions require a correctValue and no answer choices.");
             }
@@ -182,6 +225,7 @@ public class AssessmentManagementService {
         question.setQuestionType(type);
         question.setQuestionText(requiredBody("questionText", questionText));
         question.setCorrectAnswerData("TRUE_FALSE".equals(type) ? "{\"value\":" + correctValue + "}" : "{}");
+        question.setQuestionConfig(serializeQuestionConfig(type, questionConfig));
         question.setPoints(points);
         question.setDisplayOrder(displayOrder);
         question.setCreatedAt(now);
@@ -193,7 +237,19 @@ public class AssessmentManagementService {
             choices.add(createAnswerChoice(question.getId(), definition.choiceText(), definition.displayOrder()));
         }
         List<Long> correctIds = correctIndexes.stream().map(choices::get).map(AnswerChoice::getId).toList();
-        if ("MULTIPLE_CHOICE".equals(type)) {
+        if ("ENUMERATION".equals(type)) {
+            question.setCorrectAnswerData(writeJson(Map.of("acceptedAnswers", questionConfig.acceptedAnswers())));
+        } else if ("MATCHING_TYPE".equals(type)) {
+            List<Map<String, Object>> pairs = new ArrayList<>();
+            for (int i = 0; i < questionConfig.matchingPairs().size(); i++) {
+                String answerText = normalizeAnswer(questionConfig.matchingPairs().get(i).answerText());
+                AnswerChoice correctChoice = choices.stream()
+                    .filter(choice -> normalizeAnswer(choice.getChoiceText()).equals(answerText)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Each matching pair answer must be present in the shared options."));
+                pairs.add(Map.of("promptIndex", i, "choiceId", correctChoice.getId()));
+            }
+            question.setCorrectAnswerData(writeJson(Map.of("matches", pairs)));
+        } else if ("MULTIPLE_CHOICE".equals(type)) {
             question.setCorrectAnswerData("{\"choiceId\":" + correctIds.getFirst() + "}");
         } else if ("MULTIPLE_SELECT".equals(type)) {
             question.setCorrectAnswerData("{\"choiceIds\":["
@@ -232,6 +288,122 @@ public class AssessmentManagementService {
         question.setDisplayOrder(displayOrder);
         question.setUpdatedAt(utcNow());
         return questionRepository.save(question);
+    }
+
+    @Transactional
+    public Question updateQuestionConfiguration(Long questionId, String questionText, BigDecimal points,
+                                                long displayOrder, QuestionConfigInput configuration,
+                                                String correctAnswerData, String questionConfig) {
+        Question question = findQuestion(questionId);
+        String type = question.getQuestionType();
+        if (!isNewQuestionType(type)) throw new IllegalArgumentException("Only new question types use this update path.");
+        validateNewQuestionConfiguration(type, configuration);
+        if (assessmentAttemptRepository.existsByAssessment_Id(question.getAssessment().getId())) {
+            throw new IllegalStateException("Question configuration cannot be changed after student attempts exist.");
+        }
+        validateQuestion(type, questionText, correctAnswerData, points, displayOrder);
+        ensureQuestionOrderAvailable(question.getAssessment().getId(), displayOrder, questionId);
+        if ("MATCHING_TYPE".equals(type)) {
+            List<AnswerChoice> existing = answerChoiceRepository.findByQuestion_IdOrderByDisplayOrderAsc(questionId);
+            if (existing.size() != configuration.matchingPairs().size() + configuration.distractors().size()) {
+                throw new IllegalArgumentException("Save matching option rows before saving this configuration.");
+            }
+        }
+        question.setQuestionText(requiredBody("questionText", questionText));
+        question.setCorrectAnswerData(requiredBody("correctAnswerData", correctAnswerData));
+        question.setQuestionConfig(requiredBody("questionConfig", questionConfig));
+        question.setPoints(points);
+        question.setDisplayOrder(displayOrder);
+        question.setUpdatedAt(utcNow());
+        return questionRepository.save(question);
+    }
+
+    @Transactional
+    public Question updateMatchingQuestionConfiguration(Long questionId, String questionText, BigDecimal points,
+                                                         long displayOrder, QuestionConfigInput configuration) {
+        Question question = findQuestion(questionId);
+        if (!"MATCHING_TYPE".equals(question.getQuestionType())) {
+            throw new IllegalArgumentException("Only Matching Type questions use this update path.");
+        }
+        validateNewQuestionConfiguration("MATCHING_TYPE", configuration);
+        if (assessmentAttemptRepository.existsByAssessment_Id(question.getAssessment().getId())) {
+            throw new IllegalStateException("Question configuration cannot be changed after student attempts exist.");
+        }
+        validateQuestion("MATCHING_TYPE", questionText, "{}", points, displayOrder);
+        ensureQuestionOrderAvailable(question.getAssessment().getId(), displayOrder, questionId);
+
+        List<AnswerChoice> existing = answerChoiceRepository.findByQuestion_IdOrderByDisplayOrderAsc(questionId);
+        List<MatchingOptionInput> requestedOptions = matchingOptionsForUpdate(configuration, existing);
+        Map<Long, AnswerChoice> existingById = existing.stream()
+            .collect(java.util.stream.Collectors.toMap(AnswerChoice::getId, choice -> choice));
+        Set<Long> retainedIds = new HashSet<>();
+        Set<String> optionTexts = new HashSet<>();
+        Map<String, AnswerChoice> choicesByText = new HashMap<>();
+        int nextOrder = existing.stream().mapToInt(AnswerChoice::getDisplayOrder).max().orElse(0) + 1;
+
+        for (MatchingOptionInput option : requestedOptions) {
+            String text = requiredText("matching option", option.optionText(), 65_535);
+            String normalized = normalizeAnswer(text);
+            if (!optionTexts.add(normalized)) {
+                throw new IllegalArgumentException("Matching options must be unique after whitespace and case normalization.");
+            }
+            AnswerChoice choice;
+            if (option.id() == null) {
+                choice = new AnswerChoice();
+                choice.setQuestion(question);
+                choice.setChoiceText(text);
+                choice.setDisplayOrder(nextOrder++);
+                choice.setCreatedAt(utcNow());
+                choice.setUpdatedAt(utcNow());
+                choice = answerChoiceRepository.save(choice);
+            } else {
+                choice = existingById.get(option.id());
+                if (choice == null || !retainedIds.add(option.id())) {
+                    throw new IllegalArgumentException("Matching option IDs must be distinct choices belonging to this question.");
+                }
+                choice.setChoiceText(text);
+                choice.setUpdatedAt(utcNow());
+                choice = answerChoiceRepository.save(choice);
+            }
+            choicesByText.put(normalized, choice);
+        }
+
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (int index = 0; index < configuration.matchingPairs().size(); index++) {
+            MatchingPairInput pair = configuration.matchingPairs().get(index);
+            AnswerChoice choice = choicesByText.get(normalizeAnswer(pair.answerText()));
+            if (choice == null) {
+                throw new IllegalArgumentException("Every correct matching answer must reference a shared option.");
+            }
+            matches.add(Map.of("promptIndex", index, "choiceId", choice.getId()));
+        }
+        List<AnswerChoice> removed = existing.stream().filter(choice -> !retainedIds.contains(choice.getId())).toList();
+        if (!removed.isEmpty()) answerChoiceRepository.deleteAll(removed);
+
+        question.setQuestionText(requiredBody("questionText", questionText));
+        question.setCorrectAnswerData(writeJson(Map.of("matches", matches)));
+        question.setQuestionConfig(writeJson(Map.of("matchingPrompts", configuration.matchingPairs().stream()
+            .map(pair -> requiredText("matching prompt", pair.prompt(), 65_535)).toList())));
+        question.setPoints(points);
+        question.setDisplayOrder(displayOrder);
+        question.setUpdatedAt(utcNow());
+        return questionRepository.save(question);
+    }
+
+    private List<MatchingOptionInput> matchingOptionsForUpdate(QuestionConfigInput configuration,
+                                                                List<AnswerChoice> existing) {
+        if (configuration.sharedOptions() != null) return configuration.sharedOptions();
+        Map<String, AnswerChoice> existingByText = existing.stream()
+            .collect(java.util.stream.Collectors.toMap(choice -> normalizeAnswer(choice.getChoiceText()), choice -> choice));
+        List<String> values = new ArrayList<>();
+        configuration.matchingPairs().forEach(pair -> values.add(pair.answerText()));
+        if (configuration.distractors() != null) values.addAll(configuration.distractors());
+        List<MatchingOptionInput> options = new ArrayList<>();
+        for (String value : values) {
+            AnswerChoice existingChoice = existingByText.get(normalizeAnswer(value));
+            options.add(new MatchingOptionInput(existingChoice == null ? null : existingChoice.getId(), value));
+        }
+        return options;
     }
 
     @Transactional
@@ -407,9 +579,103 @@ public class AssessmentManagementService {
     private String normalizeQuestionType(String questionType) {
         String normalized = requiredText("questionType", questionType, 40).toUpperCase(Locale.ROOT);
         if (!SUPPORTED_QUESTION_TYPES.contains(normalized)) {
-            throw new IllegalArgumentException("questionType must be MULTIPLE_CHOICE, TRUE_FALSE, or MULTIPLE_SELECT.");
+            throw new IllegalArgumentException("Unsupported question type.");
         }
         return normalized;
+    }
+
+    private boolean isNewQuestionType(String type) {
+        return Set.of("MATCHING_TYPE", "ENUMERATION").contains(type);
+    }
+
+    private void validateNewQuestionConfiguration(String type, QuestionConfigInput config) {
+        if (config == null) throw new IllegalArgumentException("Question type configuration is required.");
+        if ("ENUMERATION".equals(type)) {
+            requireAcceptedAnswers(config.acceptedAnswers());
+            int count = config.requiredAnswerCount() == null ? 0 : config.requiredAnswerCount();
+            if (count < 1 || count > config.acceptedAnswers().size()) {
+                throw new IllegalArgumentException("Enumeration answer count must be positive and no greater than accepted answers.");
+            }
+            if (config.ordered() == null || config.matchingPairs() != null || config.distractors() != null
+                || config.sharedOptions() != null) {
+                throw new IllegalArgumentException("Enumeration requires ordered and acceptedAnswers only.");
+            }
+            if (config.ordered() && count != config.acceptedAnswers().size()) {
+                throw new IllegalArgumentException("Ordered Enumeration requires one accepted answer for each answer field.");
+            }
+        } else {
+            List<com.cssncii.dto.AssessmentManagementDtos.MatchingPairInput> pairs = config.matchingPairs();
+            if (pairs == null || pairs.isEmpty() || config.acceptedAnswers() != null
+                || config.requiredAnswerCount() != null || config.ordered() != null) {
+                throw new IllegalArgumentException("Matching Type requires matchingPairs only.");
+            }
+            Set<String> prompts = new HashSet<>();
+            Set<String> answers = new HashSet<>();
+            for (var pair : pairs) {
+                String prompt = requiredText("matching prompt", pair.prompt(), 65_535);
+                String answer = requiredText("matching answer", pair.answerText(), 65_535);
+                if (!prompts.add(normalizeAnswer(prompt)) || !answers.add(normalizeAnswer(answer))) {
+                    throw new IllegalArgumentException("Matching prompts and correct options must be unique.");
+                }
+            }
+            List<String> distractors = config.distractors() == null ? List.of() : config.distractors();
+            for (String distractor : distractors) {
+                if (!answers.add(normalizeAnswer(requiredText("distractor", distractor, 65_535)))) {
+                    throw new IllegalArgumentException("Matching distractors must be distinct from correct options.");
+                }
+            }
+            if (config.sharedOptions() != null) {
+                Set<String> options = new HashSet<>();
+                for (MatchingOptionInput option : config.sharedOptions()) {
+                    String text = normalizeAnswer(requiredText("matching option", option.optionText(), 65_535));
+                    if (!options.add(text)) throw new IllegalArgumentException("Matching options must be unique after whitespace and case normalization.");
+                }
+                Set<String> correctOptions = pairs.stream().map(pair -> normalizeAnswer(pair.answerText()))
+                    .collect(java.util.stream.Collectors.toSet());
+                Set<String> distractorOptions = (distractors == null ? List.<String>of() : distractors).stream()
+                    .map(this::normalizeAnswer).collect(java.util.stream.Collectors.toSet());
+                if (!options.containsAll(correctOptions) || !options.containsAll(distractorOptions)
+                    || options.size() != correctOptions.size() + distractorOptions.size()) {
+                    throw new IllegalArgumentException("Every matching answer must exist in the shared options.");
+                }
+                Set<Long> optionIds = new HashSet<>();
+                for (MatchingOptionInput option : config.sharedOptions()) {
+                    if (option.id() != null && !optionIds.add(option.id())) {
+                        throw new IllegalArgumentException("Matching option IDs must be distinct.");
+                    }
+                }
+            }
+        }
+    }
+
+    private void requireAcceptedAnswers(List<String> answers) {
+        if (answers == null || answers.isEmpty() || answers.stream().anyMatch(value -> value == null || value.isBlank())) {
+            throw new IllegalArgumentException("At least one non-blank accepted answer is required.");
+        }
+        Set<String> normalized = new HashSet<>();
+        if (answers.stream().map(this::normalizeAnswer).anyMatch(value -> !normalized.add(value))) {
+            throw new IllegalArgumentException("Accepted answers must be unique after whitespace and case normalization.");
+        }
+    }
+
+    private String serializeQuestionConfig(String type, QuestionConfigInput config) {
+        if ("MATCHING_TYPE".equals(type)) {
+            return writeJson(Map.of("matchingPrompts", config.matchingPairs().stream()
+                .map(pair -> requiredText("matching prompt", pair.prompt(), 65_535)).toList()));
+        }
+        if ("ENUMERATION".equals(type)) {
+            return writeJson(Map.of("requiredAnswerCount", config.requiredAnswerCount(), "ordered", config.ordered()));
+        }
+        return "{}";
+    }
+
+    private String writeJson(Object value) {
+        try { return JSON.writeValueAsString(value); }
+        catch (JacksonException exception) { throw new IllegalArgumentException("Question configuration is invalid.", exception); }
+    }
+
+    private String normalizeAnswer(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private void ensureQuestionOrderAvailable(Long assessmentId, long displayOrder, Long excludedQuestionId) {

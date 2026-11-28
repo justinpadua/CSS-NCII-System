@@ -187,6 +187,28 @@ class AdminAssessmentControllerTest {
     }
 
     @Test
+    void matchingUpdateAcceptsExpandedSharedOptionsAndPersistsPromptMappingConfiguration() throws Exception {
+        Assessment assessment = assessment(8L, 41L, null, "PRE_TEST");
+        Question question = question(21L, assessment, "MATCHING_TYPE", "Match components.",
+            "{\"matches\":[{\"promptIndex\":0,\"choiceId\":31}]}");
+        question.setQuestionConfig("{\"matchingPrompts\":[\"CPU\"]}");
+        List<AnswerChoice> choices = List.of(choice(31L, question, "Core", 1), choice(32L, question, "Spare", 2));
+        when(assessmentService.getQuestionById(21L)).thenReturn(question);
+        when(assessmentService.updateMatchingQuestionConfiguration(eq(21L), eq("Match components."),
+            eq(new BigDecimal("2.00")), eq(1L), any())).thenReturn(question);
+        when(assessmentService.getAnswerChoicesByQuestion(21L)).thenReturn(choices);
+
+        mockMvc.perform(put("/api/admin/assessments/8/questions/21").session(adminSession).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"questionType\":\"MATCHING_TYPE\",\"questionText\":\"Match components.\",\"points\":2.00,\"displayOrder\":1,\"questionConfig\":{\"matchingPairs\":[{\"prompt\":\"CPU\",\"answerText\":\"Core\"}],\"distractors\":[\"Spare\"],\"sharedOptions\":[{\"id\":31,\"optionText\":\"Core\"},{\"id\":32,\"optionText\":\"Spare\"}]}}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.questionConfiguration").value(
+                "{\"matchingPairs\":[{\"answerText\":\"Core\",\"prompt\":\"CPU\"}],\"distractors\":[\"Spare\"]}"));
+        verify(assessmentService).updateMatchingQuestionConfiguration(eq(21L), eq("Match components."),
+            eq(new BigDecimal("2.00")), eq(1L), any());
+    }
+
+    @Test
     void rejectsMismatchedDiscussionAndPreventsDeletingQuestionUsedInStudentHistory() throws Exception {
         when(courseService.getDiscussionById(41L)).thenReturn(discussion(41L, 99L));
         mockMvc.perform(get(DISCUSSION_URL).session(adminSession)).andExpect(status().isNotFound());
