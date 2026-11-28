@@ -239,12 +239,55 @@ class AssessmentManagementServiceTest {
     }
 
     @Test
-    void rejectsNewQuestionTypesForActivities() {
+    void createsMatchingTypeAndEnumerationQuestionsForActivities() {
         assessment.setAssessmentType("ACTIVITY");
-        QuestionConfigInput config = new QuestionConfigInput(List.of("CPU"), 1, false, null, null);
-        assertThrows(IllegalArgumentException.class, () -> service.createQuestionWithChoices(8L, "ENUMERATION",
-            "Name CPU", BigDecimal.ONE, 1, List.of(), List.of(), null, config));
-        verify(questionRepository, never()).save(any(Question.class));
+        QuestionConfigInput enumeration = new QuestionConfigInput(List.of("CPU"), 1, false, null, null);
+        var enumerationQuestion = service.createQuestionWithChoices(8L, "ENUMERATION",
+            "Name the processor", BigDecimal.ONE, 1, List.of(), List.of(), null, enumeration);
+        assertEquals("ENUMERATION", enumerationQuestion.question().getQuestionType());
+        assertEquals("{\"acceptedAnswers\":[\"CPU\"]}", enumerationQuestion.question().getCorrectAnswerData());
+
+        QuestionConfigInput matching = new QuestionConfigInput(null, null, null,
+            List.of(new MatchingPairInput("CPU", "Processor")), List.of("Storage"));
+        var matchingQuestion = service.createQuestionWithChoices(8L, "MATCHING_TYPE", "Match the component.",
+            BigDecimal.ONE, 2, List.of(
+                new AssessmentManagementService.ChoiceDefinition("Processor", 1),
+                new AssessmentManagementService.ChoiceDefinition("Storage", 2)), List.of(), null, matching);
+        assertEquals("MATCHING_TYPE", matchingQuestion.question().getQuestionType());
+        assertEquals(2, matchingQuestion.choices().size());
+    }
+
+    @Test
+    void originalQuestionTypesRemainAvailableForActivities() {
+        assessment.setAssessmentType("ACTIVITY");
+        var multipleChoice = service.createQuestionWithChoices(8L, "MULTIPLE_CHOICE", "Choose one.",
+            BigDecimal.ONE, 1, List.of(new AssessmentManagementService.ChoiceDefinition("A", 1),
+                new AssessmentManagementService.ChoiceDefinition("B", 2)), List.of(0), null);
+        savedChoices.clear();
+        var multipleSelect = service.createQuestionWithChoices(8L, "MULTIPLE_SELECT", "Choose all.",
+            BigDecimal.ONE, 2, List.of(new AssessmentManagementService.ChoiceDefinition("A", 1),
+                new AssessmentManagementService.ChoiceDefinition("B", 2)), List.of(0, 1), null);
+        var trueFalse = service.createQuestionWithChoices(8L, "TRUE_FALSE", "Statement.",
+            BigDecimal.ONE, 3, List.of(), List.of(), true);
+
+        assertEquals("{\"choiceId\":30}", multipleChoice.question().getCorrectAnswerData());
+        assertEquals(2, multipleSelect.choices().size());
+        assertEquals("{\"value\":true}", trueFalse.question().getCorrectAnswerData());
+    }
+
+    @Test
+    void duplicateActivityForSameDiscussionIsStillRejected() {
+        Discussion discussion = new Discussion();
+        discussion.setId(41L);
+        Assessment existing = new Assessment();
+        existing.setId(55L);
+        when(discussionRepository.findById(41L)).thenReturn(Optional.of(discussion));
+        when(assessmentRepository.findByDiscussion_IdAndAssessmentType(41L, "ACTIVITY"))
+            .thenReturn(Optional.of(existing));
+
+        assertThrows(IllegalArgumentException.class, () -> service.createAssessment(
+            "ACTIVITY", 41L, null, "Activity", null, false));
+        verify(assessmentRepository, never()).save(any(Assessment.class));
     }
 
     @Test

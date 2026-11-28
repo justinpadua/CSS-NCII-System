@@ -183,9 +183,6 @@ public class AssessmentManagementService {
     ) {
         Assessment assessment = findAssessment(assessmentId);
         String type = normalizeQuestionType(questionType);
-        if ("ACTIVITY".equals(assessment.getAssessmentType()) && isNewQuestionType(type)) {
-            throw new IllegalArgumentException("New automatically graded question types are not available for Activities.");
-        }
         validateQuestion(type, questionText, "{}", points, displayOrder);
         ensureQuestionOrderAvailable(assessmentId, displayOrder, null);
         List<ChoiceDefinition> definitions = choiceDefinitions == null ? List.of() : choiceDefinitions;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createAnswerChoice, createAssessmentQuestion, createDiscussionAssessment, createGeneralizedAssessment,
   deleteAnswerChoice, deleteAssessmentQuestion, listAssessmentCompetencies, listAssessmentDiscussions,
@@ -6,7 +6,7 @@ import {
   updateAnswerChoice, updateAssessment, updateAssessmentQuestion,
 } from './assessmentApi.js'
 import { getCorrectChoiceIndexes, updateCorrectChoice } from './assessmentQuestionState.js'
-import { assessmentCreationRequest, assessmentTypeForScope } from './assessmentManagementState.js'
+import { assessmentCreationRequest, assessmentListKey, assessmentListReady, questionTypesForAssessment, assessmentTypeForScope } from './assessmentManagementState.js'
 import { appendMatchingPair, buildMatchingQuestionConfig, removeMatchingDistractor, renameMatchingOption } from './matchingQuestionState.js'
 
 const DISCUSSION_TYPES = [
@@ -15,7 +15,6 @@ const DISCUSSION_TYPES = [
   { code: 'DISCUSSION_POST_TEST', label: 'Discussion Post-test' },
 ]
 const GENERALIZED_TYPE = 'GENERALIZED_POST_TEST'
-const QUESTION_TYPES = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'MULTIPLE_SELECT', 'MATCHING_TYPE', 'ENUMERATION']
 
 function messageFor(error) {
   if (error.status === 401) return 'Your Admin session has expired. Please log in again.'
@@ -50,6 +49,9 @@ function AssessmentManagement({ onSessionExpired }) {
   const [scope, setScope] = useState('discussion')
   const [assessments, setAssessments] = useState([])
   const [assessmentId, setAssessmentId] = useState('')
+  const [assessmentListStatus, setAssessmentListStatus] = useState('loading')
+  const [loadedAssessmentKey, setLoadedAssessmentKey] = useState('')
+  const assessmentLoadVersion = useRef(0)
   const [questions, setQuestions] = useState([])
   const [questionDraft, setQuestionDraft] = useState(null)
   const [assessmentDraft, setAssessmentDraft] = useState(null)
@@ -66,6 +68,10 @@ function AssessmentManagement({ onSessionExpired }) {
   const discussion = discussions.find(item => String(item.id) === String(discussionId)) ?? null
   const assessment = assessments.find(item => String(item.id) === String(assessmentId)) ?? null
   const usedTypes = useMemo(() => new Set(assessments.map(item => item.assessmentType)), [assessments])
+  const currentAssessmentKey = assessmentListKey(scope, competencyId, discussionId)
+  const canCreateInCurrentScope = assessmentListReady(
+    loadedAssessmentKey, currentAssessmentKey, assessmentListStatus,
+  )
 
   const fail = useCallback((requestError) => {
     setError(messageFor(requestError))
@@ -97,20 +103,33 @@ function AssessmentManagement({ onSessionExpired }) {
   }, [competencyId, fail])
 
   const loadAssessments = useCallback(async () => {
+    const requestVersion = ++assessmentLoadVersion.current
     if (!competencyId || (scope === 'discussion' && !discussionId)) {
-      setAssessments([]); setAssessmentId(''); setQuestions([]); return
+      setAssessments([]); setAssessmentId(''); setQuestions([]); setLoadedAssessmentKey('')
+      setAssessmentListStatus('idle'); setLoading(false); return
     }
+    const requestKey = assessmentListKey(scope, competencyId, discussionId)
+    setAssessmentListStatus('loading'); setLoadedAssessmentKey('')
+    setAssessments([]); setAssessmentId(''); setQuestions([])
+    setQuestionDraft(null); setAssessmentDraft(null)
     setLoading(true)
     try {
       const items = scope === 'generalized'
         ? await listGeneralizedAssessments(competencyId)
         : await listDiscussionAssessments(competencyId, discussionId)
+      if (requestVersion !== assessmentLoadVersion.current) return
       setAssessments(items)
       setAssessmentId(current => items.some(item => String(item.id) === String(current)) ? current : '')
-      setQuestions([])
-      setQuestionDraft(null)
-      setAssessmentDraft(null)
-    } catch (requestError) { fail(requestError) } finally { setLoading(false) }
+      setLoadedAssessmentKey(requestKey)
+      setAssessmentListStatus('loaded')
+      setLoading(false)
+    } catch (requestError) {
+      if (requestVersion !== assessmentLoadVersion.current) return
+      setAssessments([]); setAssessmentId(''); setLoadedAssessmentKey('')
+      setAssessmentListStatus('error')
+      setLoading(false)
+      fail(requestError)
+    }
   }, [competencyId, discussionId, fail, scope])
 
   const loadQuestions = useCallback(async () => {
@@ -160,7 +179,7 @@ function AssessmentManagement({ onSessionExpired }) {
 
   async function createAssessment(event) {
     event.preventDefault()
-    if (!competencyId || (scope === 'discussion' && !discussionId)) return
+    if (!competencyId || (scope === 'discussion' && !discussionId) || !canCreateInCurrentScope) return
     const title = createTitle.trim()
     await run(async () => {
       const request = assessmentCreationRequest(scope, competencyId, discussionId, createType, {
@@ -171,7 +190,7 @@ function AssessmentManagement({ onSessionExpired }) {
         : await createDiscussionAssessment(request.competencyId, request.discussionId, request.body)
       setAssessments(items => [...items, created])
       setAssessmentId(String(created.id))
-      if (scope === 'discussion' && createType !== GENERALIZED_TYPE) {
+      if (request.scope === 'discussion' && createType !== GENERALIZED_TYPE) {
         setCreateType(missingTypes.find(type => type !== createType) ?? createType)
       }
       setCreateTitle(''); setCreateInstructions(''); setCreateActive(false)
@@ -311,13 +330,13 @@ function AssessmentManagement({ onSessionExpired }) {
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
 
       <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-3">
-        <label className="text-sm font-semibold text-slate-700">COC<select value={competencyId} onChange={event => { setCompetencyId(event.target.value); setDiscussionId(''); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
+        <label className="text-sm font-semibold text-slate-700">COC<select disabled={busy} value={competencyId} onChange={event => { assessmentLoadVersion.current += 1; setCompetencyId(event.target.value); setDiscussionId(''); setAssessmentId(''); setAssessments([]); setLoadedAssessmentKey(''); setAssessmentListStatus('loading') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
           {competencies.map(item => <option key={item.id} value={item.id}>{item.code === 'COC1' ? 'COC 1' : item.code === 'COC2' ? 'COC 2' : item.title}</option>)}
         </select></label>
-        <label className="text-sm font-semibold text-slate-700">Assessment scope<select value={scope} onChange={event => { const nextScope = event.target.value; setScope(nextScope); setCreateType(current => assessmentTypeForScope(nextScope, current)); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
+        <label className="text-sm font-semibold text-slate-700">Assessment scope<select disabled={busy} value={scope} onChange={event => { const nextScope = event.target.value; assessmentLoadVersion.current += 1; setScope(nextScope); setCreateType(current => assessmentTypeForScope(nextScope, current)); setAssessmentId(''); setAssessments([]); setLoadedAssessmentKey(''); setAssessmentListStatus('loading') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
           <option value="discussion">Discussion assessment</option><option value="generalized">Generalized Post-test</option>
         </select></label>
-        {scope === 'discussion' ? <label className="text-sm font-semibold text-slate-700">Discussion<select value={discussionId} onChange={event => { setDiscussionId(event.target.value); setAssessmentId('') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
+        {scope === 'discussion' ? <label className="text-sm font-semibold text-slate-700">Discussion<select disabled={busy} value={discussionId} onChange={event => { assessmentLoadVersion.current += 1; setDiscussionId(event.target.value); setAssessmentId(''); setAssessments([]); setQuestions([]); setLoadedAssessmentKey(''); setAssessmentListStatus('loading') }} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
           {discussions.map(item => <option key={item.id} value={item.id}>{item.displayOrder}. {item.title}</option>)}
         </select></label> : <div className="flex items-center rounded-lg bg-sky-50 px-3 text-sm text-sky-950">Passing threshold: <strong className="ml-1">70%</strong> · retake limits remain system-managed</div>}
       </div>
@@ -344,7 +363,8 @@ function AssessmentManagement({ onSessionExpired }) {
               <label className="block text-sm font-medium text-slate-700">Title<input required maxLength={200} value={createTitle} onChange={event => setCreateTitle(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
               <label className="block text-sm font-medium text-slate-700">Instructions<textarea rows="3" value={createInstructions} onChange={event => setCreateInstructions(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
               <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={createActive} onChange={event => setCreateActive(event.target.checked)} className="mt-1" /><span><span className="font-medium">Activate after creation</span><span className="block text-xs text-slate-500">Active assessments are available to eligible students immediately. Leave unchecked to save as a draft.</span></span></label>
-              <button disabled={busy} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Create assessment</button>
+              {assessmentListStatus === 'error' && <div role="alert" className="flex items-center gap-3 text-sm text-red-700"><span>Assessment data could not be loaded.</span><button type="button" onClick={() => void loadAssessments()} className="font-semibold underline">Retry</button></div>}
+              <button disabled={busy || !canCreateInCurrentScope} className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{assessmentListStatus === 'loading' ? 'Loading assessments…' : 'Create assessment'}</button>
             </form>}
           </section>
 
@@ -367,7 +387,7 @@ function AssessmentManagement({ onSessionExpired }) {
               {questionDraft && <form onSubmit={saveQuestion} className="space-y-4 rounded-2xl border border-teal-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">{questionDraft.id ? 'Edit question' : 'New question'}</h2><button type="button" onClick={() => setQuestionDraft(null)} className="text-sm font-semibold text-slate-600 underline">Close</button></div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="text-sm font-medium text-slate-700">Question type<select disabled={Boolean(questionDraft.id)} value={questionDraft.questionType} onChange={event => setDraft('questionType', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100">{QUESTION_TYPES.filter(type => assessment?.assessmentType !== 'ACTIVITY' || !['MATCHING_TYPE', 'ENUMERATION'].includes(type)).map(type => <option key={type}>{type}</option>)}</select></label>
+                  <label className="text-sm font-medium text-slate-700">Question type<select disabled={Boolean(questionDraft.id)} value={questionDraft.questionType} onChange={event => setDraft('questionType', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100">{questionTypesForAssessment().map(type => <option key={type}>{type}</option>)}</select></label>
                   <label className="text-sm font-medium text-slate-700">Points<input type="number" min="0" max="999999.99" step="0.01" required value={questionDraft.points} onChange={event => setDraft('points', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
                   <label className="text-sm font-medium text-slate-700">Order<input type="number" min="0" required value={questionDraft.displayOrder} onChange={event => setDraft('displayOrder', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
                 </div>

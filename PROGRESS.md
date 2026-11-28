@@ -455,3 +455,10 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - Student Matching Type dropdowns disable options selected by other prompts, while keeping the current prompt's selection available. Changing or clearing a selection releases the previous option; correct options and distractors follow the same rule.
 - Backend matching response validation rejects duplicate non-null choice IDs before scoring, so invalid reuse cannot receive partial credit. Unique partial answers retain the existing grading calculation. Enumeration and the three original question types are unchanged.
 - **Verification:** focused backend suites passed (55 tests), frontend tests passed (41), ESLint, production build, and `git diff --check` passed. No database connection, migration, or SQL execution was performed.
+
+## 54. Activity Assessment Question Types and Scope Loading (2026-11-28)
+
+- Matching Type and Enumeration are now available for Activity assessments as well as Pre-tests, Discussion Post-tests, and Generalized Post-tests. Activity creation retains configured-question validation and uses the shared automatic grader; the three original question types remain supported. Practical Activity learning content and instructor-only rubrics are unchanged.
+- Assessment data is cleared and marked stale when the selected competency, scope, or Discussion changes. Creation stays disabled until the assessment list for the exact current scope loads successfully; stale asynchronous responses and failed requests cannot enable submission.
+- The backend scope-specific duplicate check and database uniqueness constraint remain unchanged. No assessment records, database, SQL, migrations, practical Activity content, or rubrics were accessed or changed.
+- Verification results for this change are reported with the current implementation.

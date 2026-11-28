@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   assessmentCreationRequest,
+  assessmentListKey,
+  assessmentListReady,
   assessmentTypeForScope,
   DISCUSSION_ASSESSMENT_TYPES,
   GENERALIZED_ASSESSMENT_TYPE,
+  questionTypesForAssessment,
 } from './assessmentManagementState.js'
 
 test('switching to Generalized Post-test selects its required type', () => {
@@ -35,4 +38,21 @@ test('Discussion creation keeps the selected Discussion assessment type and targ
   assert.equal(request.scope, 'discussion')
   assert.equal(request.discussionId, 41)
   assert.equal(request.body.assessmentType, 'ACTIVITY')
+})
+
+test('all five question types are available to Activities, Pre-tests, and Discussion Post-tests', () => {
+  const expected = ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'TRUE_FALSE', 'MATCHING_TYPE', 'ENUMERATION']
+  for (const type of ['ACTIVITY', 'PRE_TEST', 'DISCUSSION_POST_TEST']) {
+    assert.deepEqual(questionTypesForAssessment(type), expected)
+  }
+  assert.equal(questionTypesForAssessment('ACTIVITY').includes('IDENTIFICATION'), false)
+})
+
+test('assessment creation remains blocked until the selected Discussion list loaded successfully', () => {
+  const previousDiscussion = assessmentListKey('discussion', 1, 41)
+  const selectedDiscussion = assessmentListKey('discussion', 1, 42)
+  assert.equal(assessmentListReady(previousDiscussion, selectedDiscussion, 'loaded'), false)
+  assert.equal(assessmentListReady('', selectedDiscussion, 'loading'), false)
+  assert.equal(assessmentListReady('', selectedDiscussion, 'error'), false)
+  assert.equal(assessmentListReady(selectedDiscussion, selectedDiscussion, 'loaded'), true)
 })
