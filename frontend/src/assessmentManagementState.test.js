@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   assessmentCreationRequest,
+  assessmentTypeForAvailability,
   assessmentListKey,
   assessmentListReady,
   assessmentTypeForScope,
@@ -27,7 +28,10 @@ test('Generalized creation overrides stale type state and targets either compete
     })
     assert.equal(request.scope, 'generalized')
     assert.equal(request.competencyId, competencyId)
-    assert.equal(request.body.assessmentType, GENERALIZED_ASSESSMENT_TYPE)
+    assert.deepEqual(request.body, {
+      title: 'Generalized Post-test', instructions: null, active: false,
+      assessmentType: GENERALIZED_ASSESSMENT_TYPE,
+    })
   }
 })
 
@@ -38,6 +42,28 @@ test('Discussion creation keeps the selected Discussion assessment type and targ
   assert.equal(request.scope, 'discussion')
   assert.equal(request.discussionId, 41)
   assert.equal(request.body.assessmentType, 'ACTIVITY')
+})
+
+test('a stale unavailable PRE_TEST selection submits the available Activity type', () => {
+  const availableTypes = ['ACTIVITY', 'DISCUSSION_POST_TEST']
+  const effectiveType = assessmentTypeForAvailability('discussion', 'PRE_TEST', availableTypes)
+  assert.equal(effectiveType, 'ACTIVITY')
+  const request = assessmentCreationRequest('discussion', 1, 41, effectiveType, {
+    title: 'lesson 4', instructions: 'answer', active: false,
+  })
+  assert.deepEqual(request.body, {
+    title: 'lesson 4', instructions: 'answer', active: false, assessmentType: 'ACTIVITY',
+  })
+})
+
+test('Pre-test, Activity, and Discussion Post-test send their exact selected type', () => {
+  for (const type of DISCUSSION_ASSESSMENT_TYPES) {
+    const effectiveType = assessmentTypeForAvailability('discussion', type, DISCUSSION_ASSESSMENT_TYPES)
+    const request = assessmentCreationRequest('discussion', 1, 41, effectiveType, {
+      title: 'Assessment', instructions: null, active: false,
+    })
+    assert.equal(request.body.assessmentType, type)
+  }
 })
 
 test('all five question types are available to Activities, Pre-tests, and Discussion Post-tests', () => {

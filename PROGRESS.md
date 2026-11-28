@@ -462,3 +462,9 @@ The approved Student Account Redesign is implemented in backend/frontend source.
 - Assessment data is cleared and marked stale when the selected competency, scope, or Discussion changes. Creation stays disabled until the assessment list for the exact current scope loads successfully; stale asynchronous responses and failed requests cannot enable submission.
 - The backend scope-specific duplicate check and database uniqueness constraint remain unchanged. No assessment records, database, SQL, migrations, practical Activity content, or rubrics were accessed or changed.
 - Verification results for this change are reported with the current implementation.
+
+## 55. Activity Assessment Type Selection (2026-11-28)
+
+- Fixed the Admin creation form's stale controlled type: when PRE_TEST already exists and is omitted from the available options, the selected value and request now fall back to the first available type (such as ACTIVITY). Submission is guarded against a type that is no longer available.
+- Added exact request-payload regression coverage for Activity, Pre-test, Discussion Post-test, and Generalized Post-test. Backend duplicate validation and database constraints are unchanged.
+- No database was connected and no SQL or migration was executed.

@@ -32,6 +32,12 @@ export function assessmentTypeForScope(scope, currentType) {
   return DISCUSSION_ASSESSMENT_TYPES.includes(currentType) ? currentType : DISCUSSION_ASSESSMENT_TYPES[0]
 }
 
+export function assessmentTypeForAvailability(scope, currentType, availableTypes) {
+  if (scope === 'generalized') return GENERALIZED_ASSESSMENT_TYPE
+  if (availableTypes.includes(currentType)) return currentType
+  return availableTypes[0] ?? assessmentTypeForScope(scope, currentType)
+}
+
 export function assessmentCreationRequest(scope, competencyId, discussionId, selectedType, details) {
   const generalized = scope === 'generalized'
   return {

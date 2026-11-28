@@ -6,7 +6,7 @@ import {
   updateAnswerChoice, updateAssessment, updateAssessmentQuestion,
 } from './assessmentApi.js'
 import { getCorrectChoiceIndexes, updateCorrectChoice } from './assessmentQuestionState.js'
-import { assessmentCreationRequest, assessmentListKey, assessmentListReady, questionTypesForAssessment, assessmentTypeForScope } from './assessmentManagementState.js'
+import { assessmentCreationRequest, assessmentListKey, assessmentListReady, questionTypesForAssessment, assessmentTypeForAvailability, assessmentTypeForScope } from './assessmentManagementState.js'
 import { appendMatchingPair, buildMatchingQuestionConfig, removeMatchingDistractor, renameMatchingOption } from './matchingQuestionState.js'
 
 const DISCUSSION_TYPES = [
@@ -68,6 +68,10 @@ function AssessmentManagement({ onSessionExpired }) {
   const discussion = discussions.find(item => String(item.id) === String(discussionId)) ?? null
   const assessment = assessments.find(item => String(item.id) === String(assessmentId)) ?? null
   const usedTypes = useMemo(() => new Set(assessments.map(item => item.assessmentType)), [assessments])
+  const missingTypes = scope === 'generalized'
+    ? (usedTypes.has(GENERALIZED_TYPE) ? [] : [GENERALIZED_TYPE])
+    : DISCUSSION_TYPES.filter(type => !usedTypes.has(type.code)).map(type => type.code)
+  const selectedCreateType = assessmentTypeForAvailability(scope, createType, missingTypes)
   const currentAssessmentKey = assessmentListKey(scope, competencyId, discussionId)
   const canCreateInCurrentScope = assessmentListReady(
     loadedAssessmentKey, currentAssessmentKey, assessmentListStatus,
@@ -179,10 +183,11 @@ function AssessmentManagement({ onSessionExpired }) {
 
   async function createAssessment(event) {
     event.preventDefault()
-    if (!competencyId || (scope === 'discussion' && !discussionId) || !canCreateInCurrentScope) return
+    if (!competencyId || (scope === 'discussion' && !discussionId)
+      || !canCreateInCurrentScope || !missingTypes.includes(selectedCreateType)) return
     const title = createTitle.trim()
     await run(async () => {
-      const request = assessmentCreationRequest(scope, competencyId, discussionId, createType, {
+      const request = assessmentCreationRequest(scope, competencyId, discussionId, selectedCreateType, {
         title, instructions: createInstructions.trim() || null, active: createActive,
       })
       const created = request.scope === 'generalized'
@@ -190,8 +195,8 @@ function AssessmentManagement({ onSessionExpired }) {
         : await createDiscussionAssessment(request.competencyId, request.discussionId, request.body)
       setAssessments(items => [...items, created])
       setAssessmentId(String(created.id))
-      if (request.scope === 'discussion' && createType !== GENERALIZED_TYPE) {
-        setCreateType(missingTypes.find(type => type !== createType) ?? createType)
+      if (request.scope === 'discussion' && selectedCreateType !== GENERALIZED_TYPE) {
+        setCreateType(missingTypes.find(type => type !== selectedCreateType) ?? selectedCreateType)
       }
       setCreateTitle(''); setCreateInstructions(''); setCreateActive(false)
     }, 'Assessment created.')
@@ -314,10 +319,6 @@ function AssessmentManagement({ onSessionExpired }) {
   const updateMatchingOption = (index, optionText) => setQuestionDraft(current => renameMatchingOption(current, index, optionText))
   const removeMatchingOption = index => setQuestionDraft(current => removeMatchingDistractor(current, index))
 
-  const missingTypes = scope === 'generalized'
-    ? (usedTypes.has(GENERALIZED_TYPE) ? [] : [GENERALIZED_TYPE])
-    : DISCUSSION_TYPES.filter(type => !usedTypes.has(type.code)).map(type => type.code)
-
   return (
     <section className="space-y-5">
       <div>
@@ -357,7 +358,7 @@ function AssessmentManagement({ onSessionExpired }) {
             </div>
             {missingTypes.length > 0 && <form onSubmit={createAssessment} className="space-y-3 border-t border-slate-200 pt-4">
               <h3 className="font-semibold text-slate-800">Create assessment</h3>
-              <label className="block text-sm font-medium text-slate-700">Type<select value={createType} onChange={event => { setCreateType(event.target.value); setCreateTitle('') }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+              <label className="block text-sm font-medium text-slate-700">Type<select value={selectedCreateType} onChange={event => { setCreateType(event.target.value); setCreateTitle('') }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
                 {missingTypes.map(type => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
               </select></label>
               <label className="block text-sm font-medium text-slate-700">Title<input required maxLength={200} value={createTitle} onChange={event => setCreateTitle(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
