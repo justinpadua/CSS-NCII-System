@@ -10,6 +10,7 @@ import StudentLearningDashboard from './StudentLearningDashboard.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
 import StudentProgress from './StudentProgress.jsx'
 import SystemBrandingLayout from './SystemBranding.jsx'
+import './admin.css'
 
 const navigationItems = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -273,8 +274,9 @@ function App() {
     const currentPage = navigationItems.find(item => item.id === activePage) ?? navigationItems[0]
     return (
       <SystemBrandingLayout
+        adminMode
         headerContent={(
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="admin-header flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -297,7 +299,7 @@ function App() {
           </div>
         )}
       >
-      <div className="min-h-[calc(100svh-144px)] bg-slate-100 pb-10 text-slate-900 sm:min-h-[calc(100svh-104px)]">
+      <div className="admin-interface min-h-[calc(100svh-144px)] bg-slate-50 pb-10 text-slate-900 sm:min-h-[calc(100svh-104px)]">
         {sidebarOpen && (
           <button
             type="button"
@@ -307,10 +309,10 @@ function App() {
           />
         )}
 
-        <aside className={`fixed bottom-0 left-0 top-[112px] z-40 flex w-72 flex-col bg-gradient-to-b from-sky-950 to-teal-950 text-white shadow-xl transition-transform duration-200 sm:top-[72px] lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="border-b border-white/10 px-6 py-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-200">CSS NC II</p>
-            <h1 className="mt-1 text-xl font-bold">Admin Workspace</h1>
+        <aside className={`fixed bottom-0 left-0 top-[112px] z-40 flex w-72 flex-col border-r border-white/10 bg-[#071722] text-white transition-transform duration-200 sm:top-[72px] lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="border-b border-white/10 px-5 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">CSS NC II</p>
+            <h1 className="mt-1 text-lg font-bold">Admin Workspace</h1>
           </div>
 
           <nav aria-label="Admin navigation" className="flex-1 space-y-1 px-3 py-5">
@@ -325,7 +327,7 @@ function App() {
                     setActivePage(item.id)
                     setSidebarOpen(false)
                   }}
-                  className={`w-full rounded-lg px-4 py-3 text-left text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-200 ${selected ? 'bg-teal-700 text-white shadow-sm' : 'text-sky-100 hover:bg-white/10 hover:text-white'}`}
+                  className={`w-full rounded-lg border-l-2 px-4 py-2.5 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 ${selected ? 'border-cyan-300 bg-cyan-300/10 text-cyan-100' : 'border-transparent text-slate-300 hover:bg-white/5 hover:text-white'}`}
                 >
                   {item.label}
                 </button>

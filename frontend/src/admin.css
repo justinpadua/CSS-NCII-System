@@ -1,0 +1,47 @@
+.admin-interface {
+  --admin-accent: #22d3ee;
+  --admin-primary: #115e59;
+  background: #f8fafc;
+}
+
+.admin-header {
+  --admin-accent: #22d3ee;
+}
+
+.admin-interface .rounded-2xl,
+.admin-interface .rounded-3xl {
+  border-radius: 0.75rem;
+}
+
+.admin-interface .shadow-sm {
+  box-shadow: none;
+}
+
+.admin-interface input:focus-visible,
+.admin-interface select:focus-visible,
+.admin-interface textarea:focus-visible,
+.admin-interface button:focus-visible,
+.admin-header button:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+}
+
+.admin-interface input:focus,
+.admin-interface select:focus,
+.admin-interface textarea:focus {
+  border-color: var(--admin-primary);
+}
+
+.admin-interface table {
+  border-collapse: collapse;
+}
+
+@media (max-width: 639px) {
+  .admin-interface main {
+    padding: 1rem;
+  }
+
+  .admin-interface table {
+    font-size: 0.8125rem;
+  }
+}
